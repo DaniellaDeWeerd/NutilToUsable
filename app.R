@@ -1,0 +1,1705 @@
+library(shiny)
+library(readr)
+library(stringr)
+library(ggplot2)
+library(dplyr)
+library(pheatmap)
+library(viridis)
+library(tidyverse)
+library(colourpicker)
+library(grid)
+library(gridExtra)
+
+
+options(shiny.maxRequestSize = 300 * 1024^2)
+
+#You shouldn't have to touch this
+##### PAGE LAYOUT #####
+ui <- fluidPage(
+  titlePanel(""),
+  sidebarLayout(
+    sidebarPanel(
+      style = "height: 95vh; overflow-y: auto;", 
+      #Load in Nutil Files (left and right)
+      fileInput("left","Please input all Nutil Reference Atlas files for the left side:",multiple = TRUE),
+      fileInput("right","Please input all Nutil Reference Atlas files for the right side:",multiple = TRUE),
+      #load in tree
+      actionButton("tree","Click this when all files are done loading"),
+      tags$h1(""),
+      #download to get blank annotation file
+      downloadButton("blankAnnotation","Download blank annotation file"),
+      tags$h1(""),
+      #Checkpoint 1
+      downloadButton("saveOutput1","Download Checkpoint 1"),
+      tags$h1(""),
+      #input checkpoint 1
+      fileInput("reLoad1","Input checkpoint 1 here"),
+      #load in annotation file
+      fileInput("annotation","Please input the csv file that has the annotation information."),
+      #Checkpoint 2
+      downloadButton("saveOutput2","Download Checkpoint 2"),
+      #input checkpoint 2
+      fileInput("reLoad2","Input checkpoint 2 here"),
+      #choose X variables
+      selectizeInput("x","Select your x axis variables to create heatmap",choices=c("Don't select yet"),multiple = T,options = list(create = FALSE)),
+      #choose Y variables
+      selectizeInput("y","Select your y axis variables to create heatmap",choices=c("Don't select yet"),multiple = T,options = list(create = FALSE)),
+      #choose display X variables
+      # selectizeInput("displayX","Select your variables to display on x axis",choices=c("Don't select yet"),multiple = T,options = list(create = FALSE)),
+      #choose display Y variables
+      selectizeInput("displayY","Select your variables to display on y axis",choices=c("Don't select yet"),multiple = T,options = list(create = FALSE)),
+      #button to run initial steps of heatmap
+      actionButton("options","Get Options"),
+      tags$h1(""),
+      #x axis displays to see
+      selectizeInput("optionsX","Select your variables to see segmented on x axis",choices=c("Don't select yet"),multiple = T,options = list(create = FALSE)),
+      #choose variables to sum with
+      selectizeInput("sumWith","Select the nutil variable to create value with",choices=c("Don't select yet"),multiple = F,options = list(create = FALSE)),
+      #Choose if percentage is created using the following selections
+      checkboxInput("percent", "Multiply by 100 to make a percent?", value = FALSE),
+      #create a percentage using variables
+      checkboxInput("toGroup", "Use variables to create a percentage?", value = FALSE),
+      #choose variables to group by
+      selectizeInput("groupBy","Select the variables to group by",choices=c("Don't select yet"),multiple = T,options = list(create = FALSE)),
+      #log or not?
+      checkboxInput("log", "Should it be in log 10 scale?", value = FALSE),
+      #trimmed?
+      checkboxInput("trim", "Should it be trimmed?", value = FALSE),
+      #Choose x and y names to display
+      selectizeInput("xNames","Select the display variable to use as row names",choices=c("Don't select yet"),multiple = F,options = list(create = FALSE)),
+      selectizeInput("yNames","Select the display variable to use as col names",choices=c("Don't select yet"),multiple = F,options = list(create = FALSE)),
+      #slider for color scale
+      sliderInput("colorScale", "Color Scale:", min = -100, max = 100, value = c(0,100),step = 0.5),
+      numericInput("min_value", "Color Min Value", 0, min = -100, max = 100,step=0.5),
+      numericInput("max_value", "Color Max Value", 100, min = -100, max = 100,step=0.5),
+      #button to display normal heatmap
+      actionButton("normal","Create heatmap"),
+      tags$h1("Custom Colors"),
+      #checkbox to choose from viridis color scales
+      checkboxInput("viridis", "Choose inverted viridis color scale", value = FALSE),
+      #choose viridis color scale
+      selectInput("viridisScale", "Choose viridis color scale", choices = c("viridis", "magma", "inferno", "plasma", "cividis", "rocket", "mako","turbo"), selected = "inferno"),
+      #checkbox to choose 2 color scale
+      checkboxInput("color2", "Choose 2 color scale", value = FALSE),
+      #choose colors for 2 color scale
+      colourInput("col1", "Select colour low", "white", showColour = "background"),
+      colourInput("col2", "Select colour high", "red", showColour = "background"),
+      tags$h1(""),
+      #checkbox to choose 3 color scale
+      checkboxInput("color3", "Choose 3 color scale", value = FALSE),
+      #choose colors for 3 color scale
+      colourInput("colo1", "Select colour low", "white", showColour = "background"),
+      colourInput("colo2", "Select colour medium", "orange", showColour = "background"),
+      colourInput("colo3", "Select colour high", "red", showColour = "background"),
+      tags$h1(""),
+      #Load in SVG
+      # actionButton("SVG","Click this to initiate anatomical heatmap"),
+      # #choose from all variables to display anatomically  
+      # selectizeInput("annoVariable","Select your variable to display on anatomical heatmap",choices=c("Don't select yet"),multiple = T,options = list(create = FALSE)),
+      # #button to display anatomical heatmap
+      # actionButton("anatomical","Create anatomical heatmap"),
+      tags$h1(""),
+      downloadButton("data","Download Data"),
+      downloadButton("annoX","Download AnnoX"),
+      downloadButton("annoY","Download AnnoY"),
+      downloadButton("heatmap","Download full Heatmap"),
+      downloadButton("colors","Download Colors"),
+      downloadButton("justPlot","Download Just the Plot"),
+      # downloadButton("anatomical","Download Anatomical"),
+      downloadButton("zach","Download Zach Compatable"),
+    ),
+    mainPanel(
+      textOutput("print"),
+      textOutput("minMax"),
+      #normal heatmap
+      plotOutput("normPlot"),
+      #anatomical heatmap
+      plotOutput("anatoPlot"),
+    )
+  )
+)
+
+
+server <- function(session, input, output) {
+  ##### GLOBAL VARIABLES #####
+  vals <<- reactiveValues(
+    fullData = data.frame(matrix(nrow = 0, ncol = 13)),
+  )
+  
+  observeEvent(input$colorScale,{
+    updateNumericInput(session,"min_value","Min Value", input$colorScale[1], min = -100, max = 100,step=0.5)
+    updateNumericInput(session,"max_value","Max Value", input$colorScale[2], min = -100, max = 100,step=0.5)
+  })
+  
+  ##### LOAD IN DATA #####
+  observeEvent(input$left,{
+    the_files <- input$left
+    names <- the_files$name
+    paths <- the_files$datapath
+    for (i in 1:length(paths)){
+      toNormal <- read_delim(paths[i],delim = ";", escape_double = FALSE, trim_ws = TRUE)
+      toNormal <- toNormal[,1:10]
+      name <- names[i]
+      for (j in 2:length(toNormal[,1])) {
+        name <- rbind(name,name)
+      }
+      side <- rep("left", length(toNormal[,1]))
+      toAdd <- cbind(name,side,toNormal)
+      vals$fullData <- rbind(vals$fullData,toAdd)
+    }
+    vals$fullData <- vals$fullData[vals$fullData$`Region pixels` != 0,]
+    
+    output$print <- renderText({
+      print(paste0(Sys.time()," Done Left"))
+    })
+  })
+  
+  observeEvent(input$right,{
+    the_files <- input$right
+    names <- the_files$name
+    paths <- the_files$datapath
+    for (i in 1:length(paths)){
+      toNormal <- read_delim(paths[i],delim = ";", escape_double = FALSE, trim_ws = TRUE)
+      toNormal <- toNormal[,1:10]
+      name <- names[i]
+      for (j in 2:length(toNormal[,1])) {
+        name <- rbind(name,name)
+      }
+      side <- rep("right", length(toNormal[,1]))
+      toAdd <- cbind(name,side,toNormal)
+      vals$fullData <- rbind(vals$fullData,toAdd)
+    }
+    vals$fullData <- vals$fullData[vals$fullData$`Region pixels` != 0,]
+    
+    output$print <- renderText({
+      print(paste0(Sys.time()," Done Right"))
+    })
+  })
+  
+  #Load tree
+  observeEvent(input$tree,{
+    # file <- input$tree
+    tree <<- readRDS("flippedTree.rds")#readRDS(file = file$datapath)
+    print("Data read")
+    
+    #Find daughter, parent, and big picture regions and add to vals$fullData
+    depth <- c()
+    daughter <- c()
+    parent <- c()
+    for (i in 1:length(vals$fullData$`Region ID`)){
+      id <- vals$fullData$`Region ID`[i]
+      dep <- str_count(vals$fullData$`Region Name`[i],',')
+      depth <- c(depth,dep)
+      dau <- tree[tree$X10 == id,1]
+      if (length(dau) == 0){dau <- NA}
+      daughter <- c(daughter, dau)
+      if (dep > 1) {dep <- 1}
+      par <- tree[tree$X10 == id,1+dep]
+      if (length(par) == 0){par <- NA}
+      parent <- c(parent,par)
+    }
+    vals$fullData$depth <- depth
+    vals$fullData$daughter <- daughter
+    vals$fullData$parent <- parent
+    
+    
+    #CHANGE THIS to have it search for particular regions
+    search <- c("CTXsp","fiber tracts","HPF","HY","Isocortex","OLF","PAL","STR","TH","MB","P","MY","CB")
+    specials <- c()
+    scolor <- c()
+    i <- 1
+    for (i in 1:length(vals$fullData$`Region ID`)){
+      id <- vals$fullData$`Region ID`[i]
+      row <- tree[tree$X10 == id,-10]
+      searched <- search %in% row
+      if (sum(searched)>0) {
+        specials <- c(specials,search[searched])
+      }
+      else {
+        specials <- c(specials,NA)
+      }
+    }
+    vals$fullData$specials <- specials
+    
+    check1 <<- vals$fullData
+    
+    fullData <<- vals$fullData
+    
+    output$saveOutput1 <- downloadHandler(
+      filename = function() {
+        paste0("checkpoint1", ".rds")
+      },
+      content = function(file) {
+        saveRDS(fullData, file = file)
+        print("done saving checkpoint 1")
+      }
+    )
+    
+    
+    #for blank annotation
+    table = vals$fullData %>% group_by(name,side)  %>%
+      summarise()
+    table1 <- cbind (table, mouse=NA,sex = NA,treatment=NA,mpi=NA,genotype=NA,marker=NA,include="Y")
+    
+    output$blankAnnotation <- downloadHandler(
+      filename = function() {
+        paste0("annotation", ".csv")
+      },
+      content = function(file) {
+        write.csv(table1, file ,row.names = FALSE)
+        print("Done Downloading Blank Annotation")
+      }
+    )
+    
+    output$print <- renderText({
+      print(paste0(Sys.time()," Done Tree, Blank Annotation, and Checkpoint1"))
+    })
+  })
+  
+  #Load AfterLoad.RData
+  observeEvent(input$reLoad1,{
+    file <- input$reLoad1
+    fullData <- readRDS(file$datapath)
+    vals$fullData <- fullData
+    fullData <<- fullData
+    tree <<- readRDS("flippedTree.rds")
+    
+    output$print <- renderText({
+      print(paste0(Sys.time()," Done Loading Checkpoint 1"))
+    })
+  })
+  
+  #Load annotation file
+  observeEvent(input$annotation,{
+    #read in annotation file
+    file <- input$annotation
+    annotation <<- read.csv(file$datapath)
+    print("Data read")
+    
+    #Merge it with vals$fullData
+    marker <- c()
+    mouse <- c()
+    treatment <- c()
+    mpi <- c()
+    genotype <- c()
+    include <- c()
+    sex <- c()
+    for (i in 1:length(vals$fullData$name)){
+      name <- vals$fullData$name[i]
+      side <- vals$fullData$side[i]
+      ### MARKER ###
+      mark <- annotation[annotation$name == name & annotation$side == side,colnames(annotation) == "marker"]
+      if (length(mark) == 0) {mark <- NA}
+      marker <- c(marker,mark)
+      ### MOUSE ###
+      mou <- annotation[annotation$name == name & annotation$side == side,colnames(annotation) == "mouse"]
+      if (length(mou) == 0) {mou <- NA}
+      mouse <- c(mouse,mou)
+      ### TREATMENT ###
+      treat <- annotation[annotation$name == name & annotation$side == side,colnames(annotation) == "treatment"]
+      if (length(treat) == 0) {treat <- NA}
+      treatment <- c(treatment,treat)
+      ### SEX ###
+      se <- annotation[annotation$name == name & annotation$side == side,colnames(annotation) == "sex"]
+      if (length(treat) == 0) {treat <- NA}
+      sex <- c(sex,se)
+      ### MPI ###
+      mp <- annotation[annotation$name == name & annotation$side == side,colnames(annotation) == "mpi"]
+      if (length(mp) == 0) {mp <- NA}
+      mpi <- c(mpi,mp)
+      ### GENOTYPE ###
+      geno <- annotation[annotation$name == name & annotation$side == side,colnames(annotation) == "genotype"]
+      if (length(geno) == 0) {geno <- NA}
+      genotype <- c(genotype,geno)
+      ### INCLUDE ###
+      inc <- annotation[annotation$name == name & annotation$side == side,colnames(annotation) == "include"]
+      if (length(inc) == 0) {inc <- NA}
+      include <- c(include,inc)
+    }
+    vals$fullData$marker <- marker
+    vals$fullData$mouse <- mouse
+    vals$fullData$sex <- sex
+    vals$fullData$treatment <- treatment
+    vals$fullData$mpi <- mpi
+    vals$fullData$genotype <- genotype
+    vals$fullData$include <- include
+    
+    vals$fullData <- vals$fullData[vals$fullData$include == "Y",]
+    
+    check2 <<- vals$fullData
+    
+    print("Done Merging Annotation and Check 2")
+    
+    forAnno <<- vals$fullData
+    
+    #add options to x,y,displayX, displayY
+    options <- colnames(vals$fullData)
+    updateSelectizeInput(session, 'x', "Select your x axis variables to create heatmap", choices = options,options = list(create = F))
+    updateSelectizeInput(session, 'y', "Select your y axis variables to create heatmap", choices = options,options = list(create = F))
+    # updateSelectizeInput(session, 'displayX', "Select your variables to display on x axis", choices = options,options = list(create = F))
+    updateSelectizeInput(session, 'displayY', "Select your variables to display on y axis", choices = options,options = list(create = F))
+    
+    print("Done Adding Options")
+    
+    fullData <<- vals$fullData
+    
+    output$saveOutput2 <- downloadHandler(
+      filename = function() {
+        paste0("checkpoint2", ".rds")
+      },
+      content = function(file) {
+        saveRDS(fullData, file = file)
+        print("done saving checkpoint 2")
+      }
+    )
+    
+    output$print <- renderText({
+      print(paste0(Sys.time()," Done Adding Options, Merging Annotation, and Checkpoint 2"))
+    })
+  })
+  
+  observeEvent(input$reLoad2,{
+    file <- input$reLoad2
+    fullData <- readRDS(file$datapath)
+    vals$fullData <- fullData
+    tree <<- readRDS("flippedTree.rds")
+    
+    options <- colnames(vals$fullData)
+    updateSelectizeInput(session, 'x', "Select your x axis variables to create heatmap", choices = options,options = list(create = F))
+    updateSelectizeInput(session, 'y', "Select your y axis variables to create heatmap", choices = options,options = list(create = F))
+    # updateSelectizeInput(session, 'displayX', "Select your variables to display on x axis", choices = options,options = list(create = F))
+    updateSelectizeInput(session, 'displayY', "Select your variables to display on y axis", choices = options,options = list(create = F))
+    
+    output$print <- renderText({
+      print(paste0(Sys.time()," Done Loading Checkpoint 2"))
+    })
+  })
+  
+  ##### GET OPTIONS #####
+  observeEvent(input$options,{
+    x <<- input$x # recommended x : "mouse" and "marker" 
+    y <<- input$y # recommended y : "daughter" (or "parent") and "side"
+    displayX <<- input$x 
+    displayY <<- input$displayY
+    
+    options1 <- unique(unlist(vals$fullData[,c(x)]))
+    print(options1)
+    updateSelectizeInput(session,"optionsX","Select your variables to see segmented on x axis", choices = options1,options = list(create = F), selected = options1)
+    options1 <- unique(unlist(vals$fullData[,c(x,y)]))
+    updateSelectizeInput(session,"annoVariable","Select your variable to display on anatomical heatmap", choices = options1,options = list(create = F))
+    
+    options2 <- colnames(vals$fullData)
+    #choose variables to sum with
+    updateSelectizeInput(session,"sumWith","Select the nutil variable to create value with",choices=options2,options = list(create = FALSE))
+    #choose variables to group by
+    updateSelectizeInput(session,"groupBy","Select the variables to group by",choices=options2,options = list(create = FALSE))
+    
+    #for col and row names display
+    
+    options3 <-c("None",displayX,"X")
+    options4 <-c("None",displayY,"Y")
+    updateSelectizeInput(session,"xNames","Select the display variable to use as row names", choices = options3,options = list(create = F))
+    updateSelectizeInput(session,"yNames","Select the display variable to use as col names", choices = options4,options = list(create = F))
+    
+    output$print <- renderText({
+      print(paste0(Sys.time()," Done Updating More Options"))
+    })
+  })
+  
+  ##### CREATE HEATMAP #####
+  observeEvent(input$normal,{
+    print("heatmap started")
+    chosenOptions <<- input$optionsX
+    nutilVariable <<- input$sumWith
+    groupBy <<- input$groupBy
+    xNames <<- input$xNames
+    yNames <<- input$yNames
+    fullData <<- vals$fullData
+    updateSliderInput(session,"colorScale", "Color Scale:", min = -100, max = 100, value = c(input$min_value,input$max_value),step = 0.5)
+    # fullData <- check2
+    
+    ###### COLOR SECTION ######
+    
+    pcolor <- c()
+    scolor <- c()
+    
+    toMerge <- tree[,c(1,11)]
+    #left join
+    
+    vals$fullData$daughterColor <- toMerge[match(vals$fullData$daughter, toMerge$X1),2]
+    vals$fullData$parentColor <- toMerge[match(vals$fullData$parent, toMerge$X1),2]
+    vals$fullData$specialsColor <- toMerge[match(vals$fullData$specials, toMerge$X1),2]
+    
+    checkcolo <<-  vals$fullData
+    print("here")
+    
+    parColors <- setNames(as.character(vals$fullData$parentColor), vals$fullData$parent)
+    parColors <- parColors[unique(names(parColors))]
+    testing <- match(names(parColors),tree$X1)
+    testing1 <- c(1:length(parColors))
+    test <- data.frame(testing,testing1)
+    test <- test[order(test$testing),]
+    parColors <<- parColors[test$testing1]
+    
+    print("midway")
+    
+    specColors <- setNames(as.character(vals$fullData$specialsColor), vals$fullData$specials)
+    specColors <- specColors[unique(names(specColors))]
+    testing <- match(names(specColors),tree$X1)
+    testing1 <- c(1:length(specColors))
+    test <- data.frame(testing,testing1)
+    test <- test[order(test$testing),]
+    specColors <<- specColors[test$testing1]
+    
+    print("colors done")
+    
+    if (length(x) > 1) {
+      vals$fullData$x <- apply(vals$fullData[ ,x] , 1 , paste , collapse = "_" )
+    }
+    else {
+      vals$fullData$x <-vals$fullData[ ,x]
+    }
+    
+    if (length(y) > 1) {
+      vals$fullData$y <- apply(vals$fullData[ ,y] , 1 , paste , collapse = "_" )
+    }
+    else {
+      vals$fullData$y <-vals$fullData[ ,y]
+    }
+    print("created new cols")
+    
+    #table based on x and y with displays being included using unique
+    ZBasics <- c("mouse","Region ID","mpi","side","parent","daughter","genotype",'treatment','sex','marker')
+    
+    #calculate value and add to table
+    
+    #plain
+    if (input$percent == F & input$toGroup == F){
+      table <- aggregate(vals$fullData[,c(displayX,displayY,nutilVariable,ZBasics)], by =vals$fullData[,c("x","y")], FUN=unique)
+      
+      table$value <- table[,nutilVariable]
+      
+      sum <- c()
+      for (i in 1:length(table$value)){
+        sum <- c(sum,mean(table$value[[i]]))
+      }
+      table$value1 <- sum
+      table$value <- table$value1
+      table$ZachValue <- table$value
+      
+      if (input$log == T) {
+        table$value <- table$value + 0.00001
+        table$value <- log10(table$value)
+      }
+      table$displayValue <- table$value
+      newTable <- table
+      newTable <- newTable[,! colnames(newTable) %in% nutilVariable]
+    }
+    else if (input$percent == TRUE) {
+      print("if percent")
+      table <- aggregate(vals$fullData[,c(displayX,displayY,nutilVariable,ZBasics)], by =vals$fullData[,c("x","y")], FUN=unique)
+      
+      table$value <- table[,nutilVariable]
+      
+      sum <- c()
+      for (i in 1:length(table$value)){
+        sum <- c(sum,mean(table$value[[i]]))
+      }
+      table$value1 <- sum
+      
+      table$value <- table$value1*100
+      table$ZachValue <- table$value
+      
+      if (input$log == T) {
+        table$value <- table$value + 0.00001
+        table$value <- log10(table$value)
+        # table[is.na(table$value),17] <- 0
+      }
+      table$displayValue <- table$value
+      newTable <- table
+      newTable <- newTable[,! colnames(newTable) %in% nutilVariable]
+      #Logit scale?
+      #Log scale maybe
+    }
+    else if (input$toGroup == T){
+      print("to Group")
+      table <- aggregate(vals$fullData[,c(displayX,displayY,nutilVariable,groupBy,ZBasics)], by = vals$fullData[,groupBy], FUN=unique)
+      print("tabled")
+      
+      table$toSum <- table[,nutilVariable]
+      
+      sum <- c()
+      for (i in 1:length(table$toSum)){
+        sum <- c(sum,sum(table$toSum[[i]]))
+      }
+      table$sum <- sum
+      tableKeep <- table[,c(groupBy,"sum")]
+      
+      table <- aggregate(vals$fullData[,c(displayX,displayY,nutilVariable,groupBy,ZBasics)], by =vals$fullData[,c("x","y")], FUN=unique)
+      
+      newTable <- table %>% left_join( tableKeep, 
+                                       by=groupBy)
+      newTable$toSum <- newTable[,nutilVariable]
+      
+      ave <- c()
+      for (i in 1:length(newTable$toSum)){
+        ave <- c(ave,mean(newTable$toSum[[i]]))
+      }
+      newTable$toSum <- ave
+      
+      newTable$value <- newTable$toSum/newTable$sum*100
+      newTable$ZachValue <- newTable$value
+      if (input$log == T) {
+        newTable$value <- newTable$value + 0.00001
+        newTable$value <- log10(newTable$value)
+        # table[is.na(table$value),17] <- 0
+      }
+      newTable$displayValue <- newTable$value
+      newTable <- newTable[,! colnames(newTable) %in% nutilVariable]
+      #Linear mostly
+    }
+    else {
+      table <- aggregate(vals$fullData[,c(displayX,displayY,nutilVariable,ZBasics)], by =vals$fullData[,c("x","y")], FUN=unique)
+      
+      table$value <- table[,nutilVariable]
+      
+      sum <- c()
+      for (i in 1:length(table$value)){
+        sum <- c(sum,mean(table$value[[i]]))
+      }
+      table$value1 <- sum
+      table$value <- table$value1
+      table$ZachValue <- table$value
+      
+      if (input$log == T) {
+        table$value <- table$value + 0.00001
+        table$value <- log10(table$value)
+      }
+      table$displayValue <- table$value
+      newTable <- table
+      newTable <- newTable[,! colnames(newTable) %in% nutilVariable]
+    }
+    valueTable <<- newTable
+    print("done making table")
+    
+    check3 <<- valueTable
+    
+    # output$check3 <- downloadHandler(
+    #   filename = function() {
+    #     paste0("check3", ".csv")
+    #   },
+    #   content = function(file) {
+    #     write.csv(valueTable, file)
+    #     print("Done Downloading Check 3")
+    #   }
+    # )
+    
+    print("Done getting values for table and Check 3")
+    
+    #ZACHS Portion
+    ZTable <- valueTable[,c(ZBasics,"ZachValue","displayValue")]
+    ZTable[is.na(ZTable)] <- "None"
+    ZTable[ZTable$displayValue > input$max_value,"displayValue"] <- input$max_value
+    ZTable[ZTable$displayValue < input$min_value,"displayValue"] <- input$min_value
+    ZTable$max <- input$max_value
+    ZTable$min <- input$min_value
+    #add column to ZTable for min_value
+    ZTable <<- apply(ZTable,2,as.character)
+    print(class(ZTable$mouse))
+
+    # ZTable[ZTable$displayValue > newMax,"displayValue"] <- newMax
+    # ZTable[ZTable$displayValue < newMin,"displayValue"] <- newMin
+    # 
+    output$zach <- downloadHandler(
+      filename = function() {
+        paste0("ZachTable", ".csv")
+      },
+      content = function(file) {
+        ZTable <- apply(ZTable,2,as.character)
+        write.csv(ZTable, file)
+        print("Done Downloading Zach's Table")
+      }
+    )
+    print("done thingy")
+    
+    # library(tidyverse)
+    # 
+    uniqueX <- unique(valueTable$x)
+    uniqueY <- unique(valueTable$y)
+
+    forData <- valueTable[,c("x","y","value")]
+    attempt <- forData %>%
+      pivot_wider(names_from=c(y), values_from=value)
+    attempt <- data.frame(attempt)
+    rownames(attempt) <- attempt$x
+    data <- attempt[,-1]
+    print("done Creating Data")
+    
+    #create y annotation using displayY
+    annoY <- c()
+    for (i in uniqueY) {
+      row <- valueTable[valueTable$y == i,c(displayY)]
+      if (length(displayY) == 1) {
+        annoY <- rbind(annoY,row[1])
+      }
+      else {
+        annoY <- rbind(annoY,row[1,])
+      }
+    }
+    annoY <- data.frame(annoY)
+    colnames(annoY) <- displayY
+    rownames(annoY) <- uniqueY
+    
+    annoX <- c()
+    for (i in uniqueX) {
+      row <- valueTable[valueTable$x == i,c(displayX)]
+      if (length(displayX) == 1) {
+        annoX <- rbind(annoX,row[1])
+      }
+      else {
+        annoX <- rbind(annoX,row[1,])
+      }
+    }
+    annoX <- data.frame(annoX)
+    colnames(annoX) <- displayX
+    rownames(annoX) <- uniqueX
+    
+    check4 <<- data
+    
+    if (input$trim == TRUE) {
+      moreThan <- 0.5 #if more than this percent is missing, remove
+      #remove data if in less than half the brains
+      if (length(data[1,]) < length(data[,1])) {
+        testing <- rowSums(is.na(data))
+        rowLength <- length(data[1,])
+        rowThings <- names(testing)
+        remove <- c()
+        for (item in rowThings){
+          value <- testing[item]
+          if (value > rowLength*moreThan) {
+            remove <- c(remove,item)
+          }
+        }
+        data <- data[!rownames(data) %in% remove,]
+        annoX <- annoX[!rownames(annoX) %in% remove,]
+        annoX <- data.frame(annoX)
+        colnames(annoX) <- otherX
+        rownames(annoX) <- uniqueX[!uniqueX %in% remove]
+        
+        
+        testing <- colSums(is.na(data))
+        colLength <- length(data[,1])
+        colThings <- names(testing)
+        remove <- c()
+        for (item in colThings){
+          value <- testing[item]
+          if (value > colLength*moreThan) {
+            remove <- c(remove,item)
+          }
+        }
+        data <- data[,!colnames(data) %in% remove]
+        annoY <- annoY[!rownames(annoY) %in% remove,]
+        annoY <- data.frame(annoY)
+        colnames(annoY) <- otherY
+        rownames(annoY) <- uniqueY[!uniqueY %in% remove]
+      }
+      else {
+        testing <- colSums(is.na(data))
+        colLength <- length(data[,1])
+        colThings <- names(testing)
+        remove <- c()
+        for (item in colThings){
+          value <- testing[item]
+          if (value > colLength*moreThan) {
+            remove <- c(remove,T)
+          }
+          else {
+            remove <- c(remove, F)
+          }
+        }
+        data <- data[,remove == F, drop = F]
+        annoY <- annoY[remove == F,,drop = F]
+        
+        testing <- rowSums(is.na(data))
+        rowLength <- length(data[1,])
+        rowThings <- names(testing)
+        remove <- c()
+        for (item in rowThings){
+          value <- testing[item]
+          if (value > rowLength*moreThan) {
+            remove <- c(remove,T)
+          }
+          else {
+            remove <- c(remove, F)
+          }
+        }
+        data <- data[remove == F,,drop = F]
+        annoX <- annoX[remove ==F,,drop = F]
+
+      }
+    }
+    print("done creating annotation")
+    
+    #Create save files to mess with
+    write.csv(annoY,"annoY.csv")
+    write.csv(data,"data.csv")
+    write.csv(annoX,"annoX.csv")
+    annoY1 <<- annoY
+    annoX1 <<- annoX
+    dataTest <<- data
+    data1 <<- data
+    
+    output$data <- downloadHandler(
+      filename = function() {
+        paste0("data", ".csv")
+      },
+      content = function(file) {
+        write.csv(data, file)
+        print("Done Downloading Data")
+      }
+    )
+    
+    output$annoX <- downloadHandler(
+      filename = function() {
+        paste0("annoX", ".csv")
+      },
+      content = function(file) {
+        write.csv(annoX, file)
+        print("Done Downloading Anno X")
+      }
+    )
+    
+    output$annoY <- downloadHandler(
+      filename = function() {
+        paste0("annoY", ".csv")
+      },
+      content = function(file) {
+        write.csv(annoY, file)
+        print("Done Downloading Anno Y")
+      }
+    )
+    
+    print("done creating downloads")
+    
+    annoX <- annoX1
+    correct <- c()
+    for (i in 1:length(annoX[,1])) {
+      good = F
+      for (j in 1:length(annoX[1,])) {
+        for (item in chosenOptions) {
+          if (item == annoX[i,j]){
+            good = T
+          }
+        }
+      }
+      correct <- c(correct,good)
+    }
+    annoX <- annoX[correct == T,,drop = F]
+    data1 <- data1[correct == T,,drop = F]
+    
+    print("done segmenting")
+    
+    #Create the variables for the color palette
+    breaks <- 20
+    newMin <<- input$min_value
+    newMax <<- input$max_value
+    difference <- newMin-newMax
+    breakNum <- abs(difference/(breaks+1))
+    seqBreaks <<- seq(newMin, newMax, by=breakNum)
+    data1[data1 > newMax] <- newMax
+    data1[data1 < newMin] <- newMin
+    
+    print("colors")
+    if (exists("parColors") & exists("specColors")) {
+      if ("daughter" %in% colnames(annoX)) {
+        if ("parent" %in% colnames(annoX)){
+          if ("specials" %in% colnames(annoX)) {
+            parColors <- parColors[unique(annoX$parent)]
+            specColors <- specColors[unique(annoX$specials)]
+            
+            xAnnoColors <- list(parent = parColors,specials = specColors)
+          }
+          else {
+            parColors <- parColors[unique(annoX$parent)]
+            
+            xAnnoColors <- list(parent = parColors)
+          }
+        }
+        else {
+          xAnnoColors <- list()
+        }
+      }
+      else if ("parent" %in% colnames(annoX)) {
+        if ("specials" %in% colnames(annoX)) {
+          parColors <- parColors[unique(annoX$parent)]
+          specColors <- specColors[unique(annoX$specials)]
+          
+          xAnnoColors <- list(parent = parColors,specials = specColors)
+        }
+        else {
+          parColors <- parColors[unique(annoX$parent)]
+          
+          xAnnoColors <- list(parent = parColors)
+        }
+      }
+      else if ("specials" %in% colnames(annoX)){
+        specColors <- specColors[unique(annoX$specials)]
+        
+        xAnnoColors <- list(specials = specColors)
+      }
+      else {
+        xAnnoColors <- list()
+      }
+      
+      #Colors for AnnoY!
+      if ("daughter" %in% colnames(annoY)) {
+        if ("parent" %in% colnames(annoY)){
+          if ("specials" %in% colnames(annoY)) {
+            parColors <- parColors[unique(annoY$parent)]
+            specColors <- specColors[unique(annoY$specials)]
+            
+            yAnnoColors <- list(parent = parColors,specials = specColors)
+          }
+          else {
+            parColors <- parColors[unique(annoY$parent)]
+            
+            yAnnoColors <- list(parent = parColors)
+          }
+        }
+        else {
+          yAnnoColors <- list()
+        }
+      }
+      else if ("parent" %in% colnames(annoY)) {
+        if ("specials" %in% colnames(annoY)) {
+          parColors <- parColors[unique(annoY$parent)]
+          specColors <- specColors[unique(annoY$specials)]
+          
+          yAnnoColors <- list(parent = parColors,specials = specColors)
+        }
+        else {
+          parColors <- parColors[unique(annoY$parent)]
+          
+          yAnnoColors <- list(parent = parColors)
+        }
+      }
+      else if ("specials" %in% colnames(annoY)){
+        specColors <- specColors[unique(annoY$specials)]
+        
+        yAnnoColors <- list(specials = specColors)
+      }
+      else {
+        yAnnoColors <- list()
+      }
+    }
+    else if (exists("parColors")){
+      if ("daughter" %in% colnames(annoX)) {
+        if ("parent" %in% colnames(annoX)){
+          if ("specials" %in% colnames(annoX)) {
+            parColors <- parColors[unique(annoX$parent)]
+            
+            xAnnoColors <- list(parent = parColors)
+          }
+          else {
+            parColors <- parColors[unique(annoX$parent)]
+            
+            xAnnoColors <- list(parent = parColors)
+          }
+        }
+        else {
+          xAnnoColors <- list()
+        }
+      }
+      else if ("parent" %in% colnames(annoX)) {
+        if ("specials" %in% colnames(annoX)) {
+          parColors <- parColors[unique(annoX$parent)]
+          
+          xAnnoColors <- list(parent = parColors)
+        }
+        else {
+          parColors <- parColors[unique(annoX$parent)]
+          
+          xAnnoColors <- list(parent = parColors)
+        }
+      }
+      else if ("specials" %in% colnames(annoX)){
+        xAnnoColors <- list()
+      }
+      else {
+        xAnnoColors <- list()
+      }
+      
+      #Colors for AnnoY!
+      if ("daughter" %in% colnames(annoY)) {
+        if ("parent" %in% colnames(annoY)){
+          if ("specials" %in% colnames(annoY)) {
+            parColors <- parColors[unique(annoY$parent)]
+            
+            yAnnoColors <- list(parent = parColors)
+          }
+          else {
+            parColors <- parColors[unique(annoY$parent)]
+            
+            yAnnoColors <- list(parent = parColors)
+          }
+        }
+        else {
+          yAnnoColors <- list()
+        }
+      }
+      else if ("parent" %in% colnames(annoY)) {
+        if ("specials" %in% colnames(annoY)) {
+          parColors <- parColors[unique(annoY$parent)]
+          
+          yAnnoColors <- list(parent = parColors)
+        }
+        else {
+          parColors <- parColors[unique(annoY$parent)]
+          
+          yAnnoColors <- list(parent = parColors)
+        }
+      }
+      else if ("specials" %in% colnames(annoY)){
+        yAnnoColors <- list()
+      }
+      else {
+        yAnnoColors <- list()
+      }
+    }
+    else if (exists("specColors")) {
+      if ("daughter" %in% colnames(annoX)) {
+        if ("parent" %in% colnames(annoX)){
+          if ("specials" %in% colnames(annoX)) {
+            specColors <- specColors[unique(annoX$specials)]
+            
+            xAnnoColors <- list(specials = specColors)
+          }
+          else {
+            xAnnoColors <- list()
+          }
+        }
+        else {
+          xAnnoColors <- list()
+        }
+      }
+      else if ("parent" %in% colnames(annoX)) {
+        if ("specials" %in% colnames(annoX)) {
+          specColors <- specColors[unique(annoX$specials)]
+          
+          xAnnoColors <- list(specials = specColors)
+        }
+        else {
+          xAnnoColors <- list()
+        }
+      }
+      else if ("specials" %in% colnames(annoX)){
+        specColors <- specColors[unique(annoX$specials)]
+        
+        xAnnoColors <- list(specials = specColors)
+      }
+      else {
+        xAnnoColors <- list()
+      }
+      
+      #Colors for AnnoY!
+      if ("daughter" %in% colnames(annoY)) {
+        if ("parent" %in% colnames(annoY)){
+          if ("specials" %in% colnames(annoY)) {
+            specColors <- specColors[unique(annoY$specials)]
+            
+            yAnnoColors <- list(specials = specColors)
+          }
+          else {
+            xAnnoColors <- list()
+          }
+        }
+        else {
+          yAnnoColors <- list()
+        }
+      }
+      else if ("parent" %in% colnames(annoY)) {
+        if ("specials" %in% colnames(annoY)) {
+          specColors <- specColors[unique(annoY$specials)]
+          
+          yAnnoColors <- list(specials = specColors)
+        }
+        else {
+          xAnnoColors <- list()
+        }
+      }
+      else if ("specials" %in% colnames(annoY)){
+        specColors <- specColors[unique(annoY$specials)]
+        
+        yAnnoColors <- list(specials = specColors)
+      }
+      else {
+        yAnnoColors <- list()
+      }
+    }
+    else {
+      xAnnoColors <- list()
+      yAnnoColors <- list()
+    }
+    
+    annoColors <<- append(xAnnoColors,yAnnoColors)
+    
+    print("start sorting")
+    annoYtest <<- annoY
+    annoXtest <<- annoX
+    data1test <<- data1
+    # copy <- annoYtest
+    rownames(annoY) <-  gsub("/", ".", rownames(annoY), fixed=TRUE)
+    rownames(annoY) <-  gsub("-", ".", rownames(annoY), fixed=TRUE)
+    rownames(annoY) <-  gsub(" ", ".", rownames(annoY), fixed=TRUE)
+    colnames(data1) <-  gsub("/", ".", colnames(data1), fixed=TRUE)
+    colnames(data1) <-  gsub("-", ".", colnames(data1), fixed=TRUE)
+    colnames(data1) <-  gsub(" ", ".", colnames(data1), fixed=TRUE)
+    # data1 <- data1test
+    # annoX <- annoXtest
+    # annoY <- annoYtest
+    #Sorting by Side then ABA
+    if ("side" %in% colnames(annoY) | "side" %in% colnames(annoX)) {
+      print("yes side")
+      if ("parent" %in% colnames(annoY)) {
+        testing <- match(annoY$parent,tree$X1)
+        testing1 <- c(1:length(annoY$parent))
+        side <- annoY$side
+        test <- data.frame(testing,testing1,side)
+        test <- test[order(test$side,test$testing),]
+        annoY <- annoY[test$testing1,]
+        data1 <- data1[,test$testing1]
+      }
+      else if ("parent" %in% colnames(annoX)) {
+        testing <- match(annoX$parent,tree$X1)
+        testing1 <- c(1:length(annoX$parent))
+        side <- annoX$side
+        test <- data.frame(testing,testing1,side)
+        test <- test[order(test$side,test$testing),]
+        annoX <- annoX[test$testing1,]
+        data1 <- data1[test$testing1,]
+      }
+      else if ("specials" %in% colnames(annoY)) {
+        testing <- match(annoY$specials,tree$X1)
+        testing1 <- c(1:length(annoY$specials))
+        side <- annoY$side
+        test <- data.frame(testing,testing1,side)
+        test <- test[order(test$side,test$testing),]
+        annoY <- annoY[test$testing1,]
+        data1 <- data1[,test$testing1]
+      }
+      else if ("specials" %in% colnames(annoX)) {
+        testing <- match(annoX$specials,tree$X1)
+        testing1 <- c(1:length(annoX$specials))
+        side <- annoX$side
+        test <- data.frame(testing,testing1,side)
+        test <- test[order(test$side,test$testing),]
+        annoX <- annoX[test$testing1,]
+        data1 <- data1[test$testing1,]
+      }
+      else if ("daughter" %in% colnames(annoY)) {
+        testing <- match(annoY$daughter,tree$X1)
+        testing1 <- c(1:length(annoY$daughter))
+        side <- annoY$side
+        test <- data.frame(testing,testing1,side)
+        test <- test[order(test$side,test$testing),]
+        annoY <- annoY[test$testing1,]
+        data1 <- data1[,test$testing1]
+      }
+      else if ("daughter" %in% colnames(annoX)) {
+        testing <- match(annoX$daughter,tree$X1)
+        testing1 <- c(1:length(annoX$daughter))
+        side <- annoX$side
+        test <- data.frame(testing,testing1,side)
+        test <- test[order(test$side,test$testing),]
+        annoX <- annoX[test$testing1,]
+        data1 <- data1[test$testing1,]
+      }
+    }
+    else {
+      print("no side")
+      if ("parent" %in% colnames(annoY)) {
+        testing <- match(annoY$parent,tree$X1)
+        testing1 <- c(1:length(annoY$parent))
+        test <- data.frame(testing,testing1)
+        test <- test[order(test$testing),]
+        annoY <- annoY[test$testing1,]
+        data1 <- data1[,test$testing1]
+      }
+      else if ("parent" %in% colnames(annoX)) {
+        testing <- match(annoX$parent,tree$X1)
+        testing1 <- c(1:length(annoX$parent))
+        test <- data.frame(testing,testing1)
+        test <- test[order(test$testing),]
+        annoX <- annoX[test$testing1,]
+        data1 <- data1[test$testing1,]
+      }
+      else if ("specials" %in% colnames(annoY)) {
+        testing <- match(annoY$specials,tree$X1)
+        testing1 <- c(1:length(annoY$specials))
+        test <- data.frame(testing,testing1)
+        test <- test[order(test$testing),]
+        annoY <- annoY[test$testing1,]
+        data1 <- data1[,test$testing1]
+      }
+      else if ("specials" %in% colnames(annoX)) {
+        testing <- match(annoX$specials,tree$X1)
+        testing1 <- c(1:length(annoX$specials))
+        test <- data.frame(testing,testing1)
+        test <- test[order(test$testing),]
+        annoX <- annoX[test$testing1,]
+        data1 <- data1[test$testing1,]
+      }
+      else if ("daughter" %in% colnames(annoY)) {
+        testing <- match(annoY$daughter,tree$X1)
+        testing1 <- c(1:length(annoY$daughter))
+        test <- data.frame(testing,testing1)
+        test <- test[order(test$testing),]
+        annoY <- annoY[test$testing1,]
+        data1 <- data1[,test$testing1]
+      }
+      else if ("daughter" %in% colnames(annoX)) {
+        testing <- match(annoX$daughter,tree$X1)
+        testing1 <- c(1:length(annoX$daughter))
+        test <- data.frame(testing,testing1)
+        test <- test[order(test$testing),]
+        annoX <- annoX[test$testing1,]
+        data1 <- data1[test$testing1,]
+      }
+    }
+    print("done sorting")
+    
+    dataKeep <<- data1
+    annoXKeep <<- annoX
+    annoYKeep <<- annoY
+    
+    #labels_col and lables_row
+    print(xNames)
+    print(colnames(annoX))
+    annoX <- annoXKeep
+    annoY <- annoYKeep
+    
+    
+    if (xNames %in% colnames(annoX)) {
+      rowName <- unlist(annoX[,xNames])
+    }
+    else if (xNames == "None") {
+      rowName <- vector( "character" , length(unlist(rownames(annoX))))
+    }
+    else {
+      rowName <- unlist(rownames(annoX))
+    }
+    
+    if (yNames %in% colnames(annoY)) {
+      colName <- unlist(annoY[,yNames])
+    }
+    else if (yNames == "None") {
+      colName <- vector( "character" , length(unlist(rownames(annoY))))
+    }
+    else {
+      colName <- unlist(rownames(annoY))
+    }
+    
+    print("heatmap colors")
+    breaks <<- breaks
+    #default colors
+    heatmapColors <- viridis::inferno(breaks,direction = -1)
+    #if two or more custom colors are selected, default colors are used
+    if (input$color2 == T & input$color3 == T | input$viridis == T & input$color3 == T | input$viridis == T & input$color2 == T) {
+      output$minMax <- renderText({
+        print("Select only one of the custom color options please. The heatmap output will be in the default colors for now.")
+      })
+    }
+    else if (input$viridis == T) {
+      choice <- input$viridisScale
+      heatmapColors <- viridis::viridis(breaks,direction = -1,option = choice)
+
+      output$minMax <- renderText({
+        print(paste("Min: ",min(data,na.rm = TRUE),", Max: ",max(data,na.rm = TRUE), sep = ""))
+      })
+    }
+    else if (input$color2 == T) {
+      range <- colorRampthePalette(c(input$col1,input$col2))
+      heatmapColors <- range(length(heatmapColors)) 
+      
+      output$minMax <- renderText({
+        print(paste("Min: ",min(data,na.rm = TRUE),", Max: ",max(data,na.rm = TRUE), sep = ""))
+      })
+    }
+    else if (input$color3 == T) {
+      range <- colorRampthePalette(c(input$colo1,input$colo2,input$colo3))
+      heatmapColors <- range(length(heatmapColors))   
+      
+      output$minMax <- renderText({
+        print(paste("Min: ",min(data,na.rm = TRUE),", Max: ",max(data,na.rm = TRUE), sep = ""))
+      })
+    }
+
+    heatmapColorsForZach <<- heatmapColors
+    #update colors download
+    output$colors <- downloadHandler(
+      filename = function() {
+        paste("heatmapColors.rds")
+      },
+      content = function(file) {
+        saveRDS(heatmapColorsForZach, file)
+      }
+    )
+    
+    laAnnoX <<- annoX
+    laAnnoY <<- annoY
+    annoX <- annoX %>%
+      mutate(across(everything(), as.character))
+    annoY <- annoY %>%
+      mutate(across(everything(), as.character))
+    
+    print("start creating thePalette")
+    thePalette <<- readRDS("colorPalette.rds") #made using distinctthePalette
+    NamesCols <- c()
+    uniqueVals <- list()
+    matchingColors <- list()
+    location <- 1
+    for (i in 1:length(annoX[1,])) {
+      NamesCols <- c(NamesCols,colnames(annoX)[i])
+      
+      len <- length(uniqueVals)
+      uniques <- unique(annoX[,i])
+      uniqueVals[[len+1]] <- uniques
+      
+      colors <- c()
+      for (item in uniques) {
+        colo <- thePalette[location]
+        colors <- c(colors,colo)
+        location <- location + 1
+      }
+      
+      len <- length(matchingColors)
+      matchingColors[[len+1]] <- colors
+    }
+    
+    for (i in 1:length(annoY[1,])) {
+      NamesCols <- c(NamesCols,colnames(annoY)[i])
+      
+      len <- length(uniqueVals)
+      uniques <- unique(annoY[,i])
+      uniqueVals[[len+1]] <- uniques
+      
+      colors <- c()
+      for (item in uniques) {
+        colo <- thePalette[location]
+        colors <- c(colors,colo)
+        location <- location + 1
+      }
+      
+      len <- length(matchingColors)
+      matchingColors[[len+1]] <- colors
+    }
+    
+    blankList <- list()
+    for (i in 1:length(uniqueVals)) {
+      namePart <- uniqueVals[[i]]
+      valuePart <- matchingColors[[i]]
+      len <- length(blankList)
+      blankList[[len+1]] <- setNames(as.vector(valuePart),namePart)
+    }
+    names(blankList) <- NamesCols
+    
+    fullColors <- blankList
+    names(fullColors)
+    if ("parent" %in% names(fullColors)) {
+      fullColors$parent <- annoColors$parent
+    }
+    if ("specials" %in% names(fullColors)) {
+      fullColors$specials <- annoColors$specials
+    }
+    print("finished creating thePalette")
+    
+    fullColors <<- fullColors
+    saveAnnoX <<- annoX
+    saveAnnoY <<- annoY
+    # annoX <- saveAnnoX
+    # annoY <- saveAnnoY
+    colName <<- colName
+    rowName <<- rowName
+    heatmapColors <<- heatmapColors
+    seqBreaks <<- seqBreaks
+    saveData <<- data1
+    # data1 <- saveData
+    annoXWithout <- annoX[,!colnames(annoX) %in% c("daughter","parent","specials"), drop = FALSE]
+    annoYWithout <- annoY[,!colnames(annoY) %in% c("daughter","parent","specials"), drop = FALSE]
+    set.seed(100)
+    
+    print("Here")
+    
+    output$minMax <- renderText({
+      print(paste("Min: ",min(data,na.rm = TRUE),", Max: ",max(data,na.rm = TRUE), sep = ""))
+    })
+    if (length(annoYWithout) != 0 & length(annoXWithout) != 0) {
+      heatmap2 <<- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
+                            labels_col = colName,labels_row = rowName, color = heatmapColors, border_color=NA,
+                            annotation_row = annoXWithout,annotation_col = annoYWithout, annotation_colors = fullColors)
+    }
+    else if (length(annoYWithout) != 0) {
+      heatmap2 <<- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
+                            labels_col = colName,labels_row = rowName, color = heatmapColors, border_color=NA,
+                            annotation_col = annoYWithout, annotation_colors = fullColors)
+    }
+    else if (length(annoXWithout) != 0) {
+      heatmap2 <<- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
+                            labels_col = colName,labels_row = rowName, color = heatmapColors, border_color=NA,
+                            annotation_row = annoXWithout, annotation_colors = fullColors)
+    }
+    else {
+      heatmap2 <<- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
+                            labels_col = colName,labels_row = rowName, color = heatmapColors, border_color=NA,
+                            annotation_colors = fullColors)
+    }
+    
+    
+    print("Testing")
+    # saveRDS(data1, "dataSave.rds")
+    # saveRDS(annoX, "annoXSave.rds")
+    # saveRDS(annoY, "annoYSave.rds")
+    # saveRDS(annoColors, "annoColorsSave.rds")
+    # saveRDS(heatmapColors, "heatcolorsSave.rds")
+    # saveRDS(rowName, "rowSave.rds")
+    # saveRDS(colName, "colSave.rds")
+    # saveRDS(seqBreaks, "seqSave.rds")
+    # 
+    # data1 <- readRDS("dataSave.rds")
+    # annoX <- readRDS("annoXSave.rds")
+    # annoY <- readRDS( "annoYSave.rds")
+    # annoColors <- readRDS( "annoColorsSave.rds")
+    # heatmapColors <- readRDS( "heatcolorsSave.rds")
+    # rowName <- readRDS( "rowSave.rds")
+    # colName <- readRDS( "colSave.rds")
+    # seqBreaks <- readRDS( "seqSave.rds")
+    
+    
+    heatmap1 <<- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
+                        labels_col = colName,labels_row = rowName, color = heatmapColors,border_color=NA,
+                        annotation_row = annoX,annotation_col = annoY, annotation_colors = fullColors)
+    
+    heatmap3 <- pheatmap(data1,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F, 
+                          labels_col = colName,labels_row = rowName, color = heatmapColors,border_color=NA,
+                          annotation_row = annoX,annotation_col = annoY, annotation_colors = fullColors)
+    # saveRDS(heatmap1,"heatmapSave.rds")
+    # 
+    # theHeatmap <- readRDS("heatmapSave.rds")
+    print("start creating merge")
+    grid.newpage()
+    grid.draw(heatmap2)
+    grid.force()
+    see <- grid.ls()
+    testing <- see$gPath
+    partial <- testing[!str_detect(testing, "layout::annotation_legend") ]
+    check1 <- unlist(strsplit(partial, split='::', fixed=TRUE))
+    check2 <- check1[!str_detect(check1, "layout") ]
+
+    for (item in check2) {
+      tryCatch(
+        expr = {
+          grid.remove(item)
+        },
+        error = function(e){
+          message('Caught an error!')
+        },
+        warning = function(w){
+          message('Caught a warning!')
+        },
+        finally = {
+          message('All done, quitting.')
+        }
+      )
+    }
+    theLegend <- grid.grab()
+
+    grid.newpage()
+    grid.draw(heatmap1)
+    grid.force()
+    see <- grid.ls()
+    testing <- see$gPath
+    partial <- testing[str_detect(testing, "layout::annotation_legend") ]
+    check1 <- unlist(strsplit(partial, split='::', fixed=TRUE))
+    check2 <- check1[!str_detect(check1, "layout") ]
+
+    for (item in check2) {
+      tryCatch(
+        expr = {
+          grid.remove(item)
+        },
+        error = function(e){
+          message('Caught an error!')
+        },
+        warning = function(w){
+          message('Caught a warning!')
+        },
+        finally = {
+          message('All done, quitting.')
+        }
+      )
+    }
+    theGraph <- grid.grab()
+
+
+    grid.newpage()
+    grid.draw(theLegend)
+    grid.draw(theGraph)
+    FullPlot <<- grid.grab()
+    
+    saveRDS(FullPlot,"fullPlot.rds")
+    
+    
+    heatmap3 <- pheatmap(data1,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F, 
+                         labels_col = colName,labels_row = rowName, color = heatmapColors,border_color=NA,
+                         annotation_row = annoX,annotation_col = annoY, annotation_colors = fullColors)
+    grid.newpage()
+    grid.draw(heatmap3)
+    grid.force()
+    toUse <- grid.grab()
+    look1 <- grid.get("layout")
+    vpLayout <- look1[["vp"]][[2]][["layout"]]
+    vpLayout$ncol <- as.integer(5)
+    vpLayout$widths <- vpLayout$widths[-c(6)]
+    vpLayout$respect.mat <- vpLayout$respect.mat[,-c(6)]
+    grid.show.layout(vpLayout)
+    grid.newpage()
+    pushViewport(viewport(layout = vpLayout, name = "testing" ))
+    
+    look <- getGrob(toUse, "layout")
+    theGrobs <- look[["grobs"]]
+    while(length(grep("legend",theGrobs)) >0) {
+      theGrobs[[grep("legend",theGrobs)[1]]] <- NULL
+    }
+    theGrobs[[grep("col_names",theGrobs)]] <- NULL
+    theGrobs[[grep("row_names",theGrobs)]] <- NULL
+    
+    for (i in 1:length(theGrobs)) {
+      grid.draw(theGrobs[[i]])
+    }
+    
+    noExtras <- grid.grab()
+    
+    print("done creating merge")
+    
+    
+    
+    print(paste("Min: ",min(data,na.rm = TRUE),", Max: ",max(data,na.rm = TRUE), sep = ""))
+    
+    output$normPlot <- renderPlot({
+      grid.draw(FullPlot)
+    })
+    
+    save_heatmap_pdf <- function(x, filename, width=100, height=50) {
+      stopifnot(!missing(x))
+      stopifnot(!missing(filename))
+      pdf(filename, width=width, height=height)
+      grid::grid.newpage()
+      grid::grid.draw(x)
+      dev.off()
+    }
+    # save_pheatmap_pdf(heatmap1, "testing.pdf")
+    
+    
+    output$heatmap <- downloadHandler(
+      filename = function() {
+        paste0("heatmap", ".pdf")
+      },
+      content = function(file) {
+        save_heatmap_pdf(FullPlot, file)
+        print("Done Downloading Heatmap")
+      }
+    )
+    
+    output$justPlot <- downloadHandler(
+      filename = function() {
+        paste0("justPlot", ".pdf")
+      },
+      content = function(file) {
+        save_heatmap_pdf(noExtras, file, width = 6.5, height = 3)
+        print("Done Downloading Heatmap")
+      }
+    )
+    
+    # save(list=c("checkData","checkData1","chosenOptions","nutilVariable","groupBy","xNames","yNames","valueTable","check3","annoY1","annoX1","data1","annoColors","origData","origAnnoY","origAnnoX","dataKeep","annoXKeep","annoYKeep","x","y","displayX","displayY","check4"), file="finished.RData")
+    
+    output$print <- renderText({
+      print(paste0(Sys.time()," Done Heatmap, Check 3, Anno Y, Anno X, and Data"))
+    })
+    
+  })
+  
+  ##### ANATOMICAL VIEW #####
+  # observeEvent(input$SVG,{
+  #   # file <- input$SVG
+  #   print("started loading svg")
+  #   SVG <- readRDS("svgData.rds")#file = file$datapath)
+  # View(SVG[SVG$id == 564 & SVG$keyName == 46,])
+  #   
+  #   SVG <- SVG[SVG$keyName %in% c(23,46,67,82,88,96),]
+  #   SVG$id <- as.numeric(SVG$id)
+  #   colnames(SVG)[2] <- "Region ID"
+  #   SVG <<- SVG
+  #   chosenOptions <<- input$optionsX
+  #   nutilVariable <<- input$sumWith
+  #   groupBy <<- input$groupBy
+  #   annoVariable <<- input$annoVariable
+  #   print("Done loading SVG")
+  #   
+  #   view(SVG)
+  #   output$print <- renderText({
+  #     print("Done Loading SVG")
+  #   })
+  # })
+  # 
+  # #use the table from before to create heatmap. look at untitled.r for working anatomical
+  # observeEvent(input$anatomical,{
+  #   #Create x and y cols
+  #   if (length(x) > 1) {
+  #     forAnno$x <- apply(forAnno[ ,x] , 1 , paste , collapse = "_" )
+  #   }
+  #   else {
+  #     forAnno$x <- forAnno[ ,x]
+  #   }
+  #   
+  #   if (length(y) > 1) {
+  #     forAnno$y <- apply(forAnno[ ,y] , 1 , paste , collapse = "_" )
+  #   }
+  #   else {
+  #     forAnno$y <- forAnno[ ,y]
+  #   }
+  #   print("created new cols")
+  #   
+  #   savecols <- c()
+  #   for (i in 1:length(colnames(forAnno))) {
+  #     currentCol <- forAnno[,i]
+  #     if (any(currentCol %in% annoVariable) == TRUE) {
+  #       savecols <- c(savecols,i)
+  #     }
+  #   }
+  #   savecols <- as.numeric(savecols)
+  #   savecols <- colnames(forAnno)[savecols]
+  #   #table based on x and y with displays being included using unique
+  #   table <- aggregate(forAnno[,c(nutilVariable,groupBy,"Region ID",savecols)], by = forAnno[,groupBy], FUN=unique)
+  #   print("tabled")
+  #   
+  #   table$toSum <- table[,nutilVariable]
+  #   
+  #   sum <- c()
+  #   for (i in 1:length(table$toSum)){
+  #     sum <- c(sum,sum(table$toSum[[i]]))
+  #   }
+  #   table$sum <- sum
+  #   tableKeep <- table[,c(groupBy,"sum")]
+  #   
+  #   table <- aggregate(forAnno[,c(nutilVariable,groupBy,"Region ID",savecols)], by =forAnno[,c("x","y")], FUN=unique)
+  #   
+  #   newTable <- table %>% left_join( tableKeep, 
+  #                                    by=groupBy)
+  #   newTable$toSum <- newTable[,nutilVariable]
+  
+  # if (input$percent == TRUE) {
+  #   newTable$value <- newTable$toSum*100
+  #   if (input$log == T) {
+  #     newTable$value <- newTable$value + 0.00001
+  #     newTable$value <- log10(newTable$value)
+  #   }
+  #   #Logit scale?
+  #   #Log scale maybe
+  # }
+  # else {
+  #   newTable$value <- newTable$toSum/newTable$sum*100
+  #   if (input$log == T) {
+  #     newTable$value <- newTable$value + 0.00001
+  #     newTable$value <- log10(newTable$value)
+  #   }
+  #   #Linear mostly
+  # }
+  #   
+  #   annoTable <<- newTable
+  #   theTable <- annoTable
+  #   colnames(theTable)[1:2] <- c("X","Y")
+  #   write.csv(theTable,"check4.csv")
+  #   
+  #   toKeepRegions <- theTable %>% filter_all(any_vars(. %in% annoVariable))
+  #   toKeepRegions <- unique(toKeepRegions$`Region ID`)
+  #   
+  #   newMin <- input$colorScale[1]
+  #   newMax <- input$colorScale[2]
+  #   
+  #   for (vari in annoVariable) {
+  #     #only data for current variable
+  #     segmented <- theTable %>% filter_all(any_vars(. %in% vari))
+  #     segmented$`Region ID` <- as.numeric(segmented$`Region ID`)
+  #     if ("daughter" %in% groupBy){
+  #       colnames(segmented)[colnames(segmented)=="daughter"] <- "X1"
+  #     }
+  #     else if ("parent" %in% groupBy){
+  #       colnames(segmented)[colnames(segmented)=="parent"] <- "X1"
+  #     }
+  #     segmented1 <- left_join(segmented,tree[,c("X1","X10")], by = "X1")
+  #     table <- aggregate(segmented1[,c("value")], by = segmented1[,c("X1","X10","side")], FUN=mean)
+  #     colnames(table)[4] <- "value"
+  #     
+  #     #join with svg
+  #     colnames(table)[colnames(table)=="X10"] <- "Region ID"
+  #     table$`Region ID` <- as.numeric(table$`Region ID`)
+  #     colnames(table)[colnames(table)=="side"] <- "hemi"
+  #     testing <- left_join(SVG, table, by=c("Region ID","hemi"))
+  #     testing1 <- testing[testing$`Region ID` %in% toKeepRegions,]
+  #     
+  #     #create anatomical heat map
+  #     p <- ggplot(testing1, aes(x = x, y = y)) +
+  #       geom_polygon(aes(fill = value, group = unique), #fill = value,
+  #                    color = "black",
+  #                    size = .25) +
+  #       scale_y_reverse() + facet_wrap( ~ keyName, ncol = 3) +
+  #       theme_classic(12) +
+  #       scale_fill_gradientn(colours=rev(viridis::inferno(20)),limits=c(newMin,newMax),na.value = "grey",n.breaks=20)+
+  #       coord_fixed() +
+  #       ggtitle(vari) +
+  #       theme(
+  #         plot.title = element_text(hjust = 0.5,face = "bold"),
+  #         axis.line = element_blank(),
+  #         axis.text.x = element_blank(),
+  #         axis.text.y = element_blank(),
+  #         axis.ticks = element_blank(),
+  #         axis.title.x = element_blank(),
+  #         axis.title.y = element_blank(),
+  #         panel.background = element_blank(),
+  #         panel.border = element_blank(),
+  #         panel.grid.major = element_blank(),
+  #         panel.grid.minor = element_blank(),
+  #         plot.background = element_blank(),
+  #         legend.position = "bottom",
+  #         legend.title = element_blank(),
+  #         legend.key.width = unit(3.5, 'cm'),
+  #         strip.background = element_blank()
+  #       )
+  #     ggsave(paste(vari,".pdf",sep=""), p, width = 10, height = 10)
+  #   }
+  #   
+  #   library(qpdf)
+  #   files <- list.files(pattern = "\\.pdf$")
+  #   output$anatomical <- downloadHandler(
+  #     filename = function() {
+  #       paste0("anatomical", ".pdf")
+  #     },
+  #     content = function(file) {
+  #       qpdf::pdf_combine(input = files,
+  #                         output = file)
+  #       print("Done Downloading Anatomical")
+  #     }
+  #   )
+  #   
+  #   output$normPlot <- renderPlot({
+  #     p
+  #   })
+  #   
+  #   output$print <- renderText({
+  #     print("Done Saving Plots")
+  #   })
+  # })
+}
+
+
+shinyApp(ui = ui, server = server)
