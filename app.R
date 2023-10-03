@@ -10,13 +10,15 @@ library(colourpicker)
 library(grid)
 library(gridExtra)
 
+library(data.tree)
+
 
 options(shiny.maxRequestSize = 300 * 1024^2)
 
 #You shouldn't have to touch this
 ##### PAGE LAYOUT #####
 ui <- fluidPage(
-  titlePanel(""),
+  titlePanel("N2U"),
   sidebarLayout(
     sidebarPanel(
       style = "height: 95vh; overflow-y: auto;", 
@@ -39,7 +41,8 @@ ui <- fluidPage(
       #Checkpoint 2
       downloadButton("saveOutput2","Download Checkpoint 2"),
       #input checkpoint 2
-      fileInput("reLoad2","Input checkpoint 2 here"),
+      fileInput("reLoad2","Input checkpoint 2 here (RDS|Old Checkpoint)"),
+      fileInput("reLoad2csv","Input checkpoint 2 here (csv)"),
       #choose X variables
       selectizeInput("x","Select your x axis variables to create heatmap",choices=c("Don't select yet"),multiple = T,options = list(create = FALSE)),
       #choose Y variables
@@ -48,6 +51,7 @@ ui <- fluidPage(
       # selectizeInput("displayX","Select your variables to display on x axis",choices=c("Don't select yet"),multiple = T,options = list(create = FALSE)),
       #choose display Y variables
       selectizeInput("displayY","Select your variables to display on y axis",choices=c("Don't select yet"),multiple = T,options = list(create = FALSE)),
+      
       #button to run initial steps of heatmap
       actionButton("options","Get Options"),
       tags$h1(""),
@@ -65,6 +69,8 @@ ui <- fluidPage(
       checkboxInput("log", "Should it be in log 10 scale?", value = FALSE),
       #trimmed?
       checkboxInput("trim", "Should it be trimmed?", value = FALSE),
+      #Select variables to remove
+      selectizeInput('toRemove', "Select any regions to remove",choices=c("Don't select yet"),multiple = T,options = list(create = FALSE)),
       #Choose x and y names to display
       selectizeInput("xNames","Select the display variable to use as row names",choices=c("Don't select yet"),multiple = F,options = list(create = FALSE)),
       selectizeInput("yNames","Select the display variable to use as col names",choices=c("Don't select yet"),multiple = F,options = list(create = FALSE)),
@@ -82,15 +88,15 @@ ui <- fluidPage(
       #checkbox to choose 2 color scale
       checkboxInput("color2", "Choose 2 color scale", value = FALSE),
       #choose colors for 2 color scale
-      colourInput("col1", "Select colour low", "white", showColour = "background"),
-      colourInput("col2", "Select colour high", "red", showColour = "background"),
+      colourpicker :: colourInput("col1", "Select colour low", "white", showColour = "background"),
+      colourpicker :: colourInput("col2", "Select colour high", "red", showColour = "background"),
       tags$h1(""),
       #checkbox to choose 3 color scale
       checkboxInput("color3", "Choose 3 color scale", value = FALSE),
       #choose colors for 3 color scale
-      colourInput("colo1", "Select colour low", "white", showColour = "background"),
-      colourInput("colo2", "Select colour medium", "orange", showColour = "background"),
-      colourInput("colo3", "Select colour high", "red", showColour = "background"),
+      colourpicker :: colourInput("colo1", "Select colour low", "white", showColour = "background"),
+      colourpicker :: colourInput("colo2", "Select colour medium", "orange", showColour = "background"),
+      colourpicker :: colourInput("colo3", "Select colour high", "red", showColour = "background"),
       tags$h1(""),
       #Load in SVG
       # actionButton("SVG","Click this to initiate anatomical heatmap"),
@@ -179,7 +185,7 @@ server <- function(session, input, output) {
   #Load tree
   observeEvent(input$tree,{
     # file <- input$tree
-    tree <<- readRDS("flippedTree.rds")#readRDS(file = file$datapath)
+    tree <<- readRDS("RequiredFiles/flippedTree.rds")#readRDS(file = file$datapath)
     print("Data read")
     
     #Find daughter, parent, and big picture regions and add to vals$fullData
@@ -206,7 +212,6 @@ server <- function(session, input, output) {
     #CHANGE THIS to have it search for particular regions
     search <- c("CTXsp","fiber tracts","HPF","HY","Isocortex","OLF","PAL","STR","TH","MB","P","MY","CB")
     specials <- c()
-    scolor <- c()
     i <- 1
     for (i in 1:length(vals$fullData$`Region ID`)){
       id <- vals$fullData$`Region ID`[i]
@@ -220,9 +225,26 @@ server <- function(session, input, output) {
       }
     }
     vals$fullData$specials <- specials
-    
     check1 <<- vals$fullData
+    fullData <<- vals$fullData
     
+    #TO REMOVE
+    #search <- c("fiber tracts","VS")
+    regionsToRemove <<- c("")
+    remove <- c()
+    i <- 1
+    for (i in 1:length(vals$fullData$`Region ID`)){
+      id <- vals$fullData$`Region ID`[i]
+      row <- tree[tree$X10 == id,-10]
+      searched <- regionsToRemove %in% row
+      if (sum(searched)>0) {
+        remove <- c(remove,"remove")
+      }
+      else {
+        remove <- c(remove,"keep")
+      }
+    }
+    vals$fullData <- vals$fullData[remove == "keep",]
     fullData <<- vals$fullData
     
     output$saveOutput1 <- downloadHandler(
@@ -230,11 +252,10 @@ server <- function(session, input, output) {
         paste0("checkpoint1", ".rds")
       },
       content = function(file) {
-        saveRDS(fullData, file = file)
-        print("done saving checkpoint 1")
+        saveRDS(fullData, file)
+        print("Done Downloading checkpoint 1")
       }
     )
-    
     
     #for blank annotation
     table = vals$fullData %>% group_by(name,side)  %>%
@@ -262,7 +283,7 @@ server <- function(session, input, output) {
     fullData <- readRDS(file$datapath)
     vals$fullData <- fullData
     fullData <<- fullData
-    tree <<- readRDS("flippedTree.rds")
+    tree <<- readRDS("RequiredFiles/flippedTree.rds")
     
     output$print <- renderText({
       print(paste0(Sys.time()," Done Loading Checkpoint 1"))
@@ -345,10 +366,11 @@ server <- function(session, input, output) {
     
     output$saveOutput2 <- downloadHandler(
       filename = function() {
-        paste0("checkpoint2", ".rds")
+        paste0("checkpoint2", ".csv")
       },
       content = function(file) {
-        saveRDS(fullData, file = file)
+        #saveRDS(fullData, file = file)
+        write.csv(fullData, file = file, row.names=FALSE)
         print("done saving checkpoint 2")
       }
     )
@@ -362,7 +384,26 @@ server <- function(session, input, output) {
     file <- input$reLoad2
     fullData <- readRDS(file$datapath)
     vals$fullData <- fullData
-    tree <<- readRDS("flippedTree.rds")
+    checking1 <<- vals$fullData
+    tree <<- readRDS("RequiredFiles/flippedTree.rds")
+    
+    options <- colnames(vals$fullData)
+    updateSelectizeInput(session, 'x', "Select your x axis variables to create heatmap", choices = options,options = list(create = F))
+    updateSelectizeInput(session, 'y', "Select your y axis variables to create heatmap", choices = options,options = list(create = F))
+    # updateSelectizeInput(session, 'displayX', "Select your variables to display on x axis", choices = options,options = list(create = F))
+    updateSelectizeInput(session, 'displayY', "Select your variables to display on y axis", choices = options,options = list(create = F))
+    
+    output$print <- renderText({
+      print(paste0(Sys.time()," Done Loading Checkpoint 2"))
+    })
+  })
+  
+  observeEvent(input$reLoad2csv,{
+    file <- input$reLoad2csv
+    fullData <- read.csv(file$datapath)
+    vals$fullData <- fullData
+    checking1 <<- vals$fullData
+    tree <<- readRDS("RequiredFiles/flippedTree.rds")
     
     options <- colnames(vals$fullData)
     updateSelectizeInput(session, 'x', "Select your x axis variables to create heatmap", choices = options,options = list(create = F))
@@ -379,7 +420,7 @@ server <- function(session, input, output) {
   observeEvent(input$options,{
     x <<- input$x # recommended x : "mouse" and "marker" 
     y <<- input$y # recommended y : "daughter" (or "parent") and "side"
-    displayX <<- input$x 
+    displayX <<- input$x
     displayY <<- input$displayY
     
     options1 <- unique(unlist(vals$fullData[,c(x)]))
@@ -391,8 +432,10 @@ server <- function(session, input, output) {
     options2 <- colnames(vals$fullData)
     #choose variables to sum with
     updateSelectizeInput(session,"sumWith","Select the nutil variable to create value with",choices=options2,options = list(create = FALSE))
+    
+    combinedvars <<- c(x,y)
     #choose variables to group by
-    updateSelectizeInput(session,"groupBy","Select the variables to group by",choices=options2,options = list(create = FALSE))
+    updateSelectizeInput(session,"groupBy","Select the variables to group by",choices=combinedvars,options = list(create = FALSE))
     
     #for col and row names display
     
@@ -400,6 +443,8 @@ server <- function(session, input, output) {
     options4 <-c("None",displayY,"Y")
     updateSelectizeInput(session,"xNames","Select the display variable to use as row names", choices = options3,options = list(create = F))
     updateSelectizeInput(session,"yNames","Select the display variable to use as col names", choices = options4,options = list(create = F))
+    
+    updateSelectizeInput(session, 'toRemove', "Select any regions to remove", choices = tree$X1,options = list(create = F), selected = c("VS"))
     
     output$print <- renderText({
       print(paste0(Sys.time()," Done Updating More Options"))
@@ -417,9 +462,10 @@ server <- function(session, input, output) {
     fullData <<- vals$fullData
     updateSliderInput(session,"colorScale", "Color Scale:", min = -100, max = 100, value = c(input$min_value,input$max_value),step = 0.5)
     # fullData <- check2
-    
+    vals$fullData$mouse <- as.character(vals$fullData$mouse)
+    vals$fullData[,nutilVariable] <- as.numeric(vals$fullData[,nutilVariable])
     ###### COLOR SECTION ######
-    
+    dcolor <- c()
     pcolor <- c()
     scolor <- c()
     
@@ -432,6 +478,14 @@ server <- function(session, input, output) {
     
     checkcolo <<-  vals$fullData
     print("here")
+    
+    dauColors <- setNames(as.character(vals$fullData$daughterColor), vals$fullData$daughter)
+    dauColors <- dauColors[unique(names(dauColors))]
+    testing <- match(names(dauColors),tree$X1)
+    testing1 <- c(1:length(dauColors))
+    test <- data.frame(testing,testing1)
+    test <- test[order(test$testing),]
+    dauColors <<- dauColors[test$testing1]
     
     parColors <- setNames(as.character(vals$fullData$parentColor), vals$fullData$parent)
     parColors <- parColors[unique(names(parColors))]
@@ -467,18 +521,37 @@ server <- function(session, input, output) {
       vals$fullData$y <-vals$fullData[ ,y]
     }
     print("created new cols")
-    
-    #table based on x and y with displays being included using unique
-    ZBasics <- c("mouse","Region ID","mpi","side","parent","daughter","genotype",'treatment','sex','marker')
-    
-    #calculate value and add to table
-    
-    #plain
+   
+    #Remove these regions
+    # theSearch <<- input$toRemove
+    # remove <- c()
+    # i <- 1
+    # for (i in 1:length(vals$fullData$`Region ID`)){
+    #   id <- vals$fullData$`Region ID`[i]
+    #   row <- tree[tree$X10 == id,-10]
+    #   searched <- theSearch %in% row
+    #   if (sum(searched)>0) {
+    #     remove <- c(remove,"remove")
+    #   }
+    #   else {
+    #     remove <- c(remove,"keep")
+    #   }
+    # }
+    # vals$fullData <- vals$fullData[remove == "keep",]
+    colnames(vals$fullData) <- gsub("\\."," ",colnames(vals$fullData))
+    vals$fullData$forRemove <- vals$fullData$`Region ID`
+    ZBasics <<- c("mouse","Region ID","mpi","side","parent","daughter","genotype",'treatment','sex','marker','forRemove')
+    fullData <<- vals$fullData
+    ##calculate value and add to table
     if (input$percent == F & input$toGroup == F){
-      table <- aggregate(vals$fullData[,c(displayX,displayY,nutilVariable,ZBasics)], by =vals$fullData[,c("x","y")], FUN=unique)
-      
+      print("testing1")
+      colnames(vals$fullData) <- gsub("\\."," ",colnames(vals$fullData))
+      nutilVariable <- gsub("\\."," ",nutilVariable)
+      fullData <<- vals$fullData
+      table <- aggregate(fullData[,c(displayX,displayY,nutilVariable,ZBasics)], by =fullData[,c("x","y")], FUN=unique)
+      print("testing1.5")
       table$value <- table[,nutilVariable]
-      
+      print("testing2")
       sum <- c()
       for (i in 1:length(table$value)){
         sum <- c(sum,mean(table$value[[i]]))
@@ -486,17 +559,21 @@ server <- function(session, input, output) {
       table$value1 <- sum
       table$value <- table$value1
       table$ZachValue <- table$value
-      
+      print("testing3")
       if (input$log == T) {
         table$value <- table$value + 0.00001
         table$value <- log10(table$value)
       }
+      print("testing4")
       table$displayValue <- table$value
       newTable <- table
       newTable <- newTable[,! colnames(newTable) %in% nutilVariable]
+      print("testing5")
     }
     else if (input$percent == TRUE) {
       print("if percent")
+      colnames(vals$fullData) <- gsub("\\."," ",colnames(vals$fullData))
+      nutilVariable <- gsub("\\."," ",nutilVariable)
       table <- aggregate(vals$fullData[,c(displayX,displayY,nutilVariable,ZBasics)], by =vals$fullData[,c("x","y")], FUN=unique)
       
       table$value <- table[,nutilVariable]
@@ -523,40 +600,57 @@ server <- function(session, input, output) {
     }
     else if (input$toGroup == T){
       print("to Group")
-      table <- aggregate(vals$fullData[,c(displayX,displayY,nutilVariable,groupBy,ZBasics)], by = vals$fullData[,groupBy], FUN=unique)
-      print("tabled")
+      colnames(fullData) <- gsub("\\."," ",colnames(fullData))
+      nutilVariable <<- gsub("\\."," ",nutilVariable)
+      ZBasics <<- gsub("\\."," ",ZBasics)
       
-      table$toSum <- table[,nutilVariable]
+      print("1")
+      #aggregate by x and y first
+      theTablePt1 <- aggregate(fullData[,c(displayX,displayY,groupBy,ZBasics)], by = fullData[,c("x","y")], FUN=unique)
+      theTablePt2 <- aggregate(fullData[,c(nutilVariable)], by = fullData[,c("x","y")], FUN=as.vector)
+      colnames(theTablePt2)[3] <- nutilVariable
+      theTable <<- cbind(theTablePt1,theTablePt2)
       
-      sum <- c()
-      for (i in 1:length(table$toSum)){
-        sum <- c(sum,sum(table$toSum[[i]]))
-      }
-      table$sum <- sum
-      tableKeep <- table[,c(groupBy,"sum")]
+      theTable$nutilVariable <- theTable[,nutilVariable]
+      theTable <- theTable[, !duplicated(colnames(theTable))]
+      theTable <- theTable %>% select(-contains('.1'))
+      theTable <- theTable %>% select(-contains('.2'))
       
-      table <- aggregate(vals$fullData[,c(displayX,displayY,nutilVariable,groupBy,ZBasics)], by =vals$fullData[,c("x","y")], FUN=unique)
+      print("2")
+      #sum each row
+      theTable1 <<- theTable %>% rowwise() %>% 
+        mutate(Sum = sum(as.numeric(nutilVariable),na.rm = T))
       
-      newTable <- table %>% left_join( tableKeep, 
-                                       by=groupBy)
-      newTable$toSum <- newTable[,nutilVariable]
+      print("3")
+      #add up sums to get totals
+      # totalsTable <- aggregate(theTable1[,c(groupBy,"Sum")], by = theTable1[,c(groupBy)], FUN=unique)
+      totalsTablePt1 <- aggregate(theTable1[,c(groupBy)], by = theTable1[,c(groupBy)], FUN=unique)
+      totalsTablePt2 <- aggregate(theTable1[,c("Sum")], by = theTable1[,c(groupBy)], FUN=as.vector)
       
-      ave <- c()
-      for (i in 1:length(newTable$toSum)){
-        ave <- c(ave,mean(newTable$toSum[[i]]))
-      }
-      newTable$toSum <- ave
+      totalsTable <<- cbind(totalsTablePt1,totalsTablePt2)
       
-      newTable$value <- newTable$toSum/newTable$sum*100
+      totalsTable <- totalsTable[, !duplicated(colnames(totalsTable))]
+      totalsTable <- totalsTable %>% rowwise() %>% 
+        mutate(totalSum = sum(as.numeric(Sum),na.rm = T))
+      totalsTable1 <<- totalsTable[,!colnames(totalsTable) %in% c("Sum")]
+      print("4")
+      #combine tables
+      
+      newTable <<- theTable1 %>% left_join(totalsTable1,by=groupBy)
+      newTable <- newTable[, !duplicated(colnames(newTable))]
+      print("5")
+      #do math to get percents
+      
+      newTable$value <- newTable$Sum/newTable$totalSum*100
       newTable$ZachValue <- newTable$value
+      print("6")
       if (input$log == T) {
         newTable$value <- newTable$value + 0.00001
         newTable$value <- log10(newTable$value)
         # table[is.na(table$value),17] <- 0
       }
       newTable$displayValue <- newTable$value
-      newTable <- newTable[,! colnames(newTable) %in% nutilVariable]
-      #Linear mostly
+      
     }
     else {
       table <- aggregate(vals$fullData[,c(displayX,displayY,nutilVariable,ZBasics)], by =vals$fullData[,c("x","y")], FUN=unique)
@@ -582,34 +676,48 @@ server <- function(session, input, output) {
     valueTable <<- newTable
     print("done making table")
     
-    check3 <<- valueTable
+    #Remove these regions
+    theSearch <<- input$toRemove
+    remove <- c()
+    i <- 1
+    for (i in 1:length(valueTable$forRemove)){
+      id <- valueTable$forRemove[i]
+      row <- tree[tree$X10 == id,-10]
+      searched <- theSearch %in% row
+      if (sum(searched)>0) {
+        remove <- c(remove,"remove")
+      }
+      else {
+        remove <- c(remove,"keep")
+      }
+    }
+    valueTable <- valueTable[remove == "keep",]
     
-    # output$check3 <- downloadHandler(
-    #   filename = function() {
-    #     paste0("check3", ".csv")
-    #   },
-    #   content = function(file) {
-    #     write.csv(valueTable, file)
-    #     print("Done Downloading Check 3")
-    #   }
-    # )
+    check3 <<- valueTable
     
     print("Done getting values for table and Check 3")
     
     #ZACHS Portion
     ZTable <- valueTable[,c(ZBasics,"ZachValue","displayValue")]
+    theMax <<- input$max_value
+    theMin <<- input$min_value
+    toChangeMax <- ZTable$displayValue > theMax
+    toChangeMin <- ZTable$displayValue < theMin
+    toChangeMax[is.na(toChangeMax)] <- FALSE
+    toChangeMin[is.na(toChangeMin)] <- FALSE
+    ZTable[toChangeMax,"displayValue"] <- theMax
+    ZTable[toChangeMin,"displayValue"] <- theMin
+    
+    ZTable <- ZTable %>% mutate_all(as.character)
+    
     ZTable[is.na(ZTable)] <- "None"
-    ZTable[ZTable$displayValue > input$max_value,"displayValue"] <- input$max_value
-    ZTable[ZTable$displayValue < input$min_value,"displayValue"] <- input$min_value
-    ZTable$max <- input$max_value
-    ZTable$min <- input$min_value
+    ZTable$max <- theMax
+    ZTable$min <- theMin
     #add column to ZTable for min_value
     ZTable <<- apply(ZTable,2,as.character)
+    ZTable <<- as.data.frame(ZTable)
     print(class(ZTable$mouse))
-
-    # ZTable[ZTable$displayValue > newMax,"displayValue"] <- newMax
-    # ZTable[ZTable$displayValue < newMin,"displayValue"] <- newMin
-    # 
+    
     output$zach <- downloadHandler(
       filename = function() {
         paste0("ZachTable", ".csv")
@@ -633,6 +741,8 @@ server <- function(session, input, output) {
     attempt <- data.frame(attempt)
     rownames(attempt) <- attempt$x
     data <- attempt[,-1]
+    #organize attempt rows by rownames
+    data <- data[order(rownames(data)), ]
     print("done Creating Data")
     
     #create y annotation using displayY
@@ -681,9 +791,10 @@ server <- function(session, input, output) {
           }
         }
         data <- data[!rownames(data) %in% remove,]
+        saved <- colnames(annoX)
         annoX <- annoX[!rownames(annoX) %in% remove,]
         annoX <- data.frame(annoX)
-        colnames(annoX) <- otherX
+        colnames(annoX) <- saved
         rownames(annoX) <- uniqueX[!uniqueX %in% remove]
         
         
@@ -698,9 +809,10 @@ server <- function(session, input, output) {
           }
         }
         data <- data[,!colnames(data) %in% remove]
+        saved <- colnames(annoY)
         annoY <- annoY[!rownames(annoY) %in% remove,]
         annoY <- data.frame(annoY)
-        colnames(annoY) <- otherY
+        colnames(annoY) <- saved
         rownames(annoY) <- uniqueY[!uniqueY %in% remove]
       }
       else {
@@ -810,23 +922,27 @@ server <- function(session, input, output) {
     data1[data1 < newMin] <- newMin
     
     print("colors")
-    if (exists("parColors") & exists("specColors")) {
+    if (exists("dauColors")& exists("parColors") & exists("specColors")) {
       if ("daughter" %in% colnames(annoX)) {
         if ("parent" %in% colnames(annoX)){
           if ("specials" %in% colnames(annoX)) {
             parColors <- parColors[unique(annoX$parent)]
             specColors <- specColors[unique(annoX$specials)]
+            dauColors <- dauColors[unique(annoX$daughter)]
             
-            xAnnoColors <- list(parent = parColors,specials = specColors)
+            xAnnoColors <- list(parent = parColors,specials = specColors,daughter = dauColors)
           }
           else {
             parColors <- parColors[unique(annoX$parent)]
+            dauColors <- dauColors[unique(annoX$daughter)]
             
-            xAnnoColors <- list(parent = parColors)
+            xAnnoColors <- list(parent = parColors, daughter = dauColors)
           }
         }
         else {
-          xAnnoColors <- list()
+          dauColors <- dauColors[unique(annoX$daughter)]
+          
+          xAnnoColors <- list(daughter = dauColors)
         }
       }
       else if ("parent" %in% colnames(annoX)) {
@@ -857,17 +973,21 @@ server <- function(session, input, output) {
           if ("specials" %in% colnames(annoY)) {
             parColors <- parColors[unique(annoY$parent)]
             specColors <- specColors[unique(annoY$specials)]
+            dauColors <- dauColors[unique(annoY$daughter)]
             
-            yAnnoColors <- list(parent = parColors,specials = specColors)
+            yAnnoColors <- list(parent = parColors,specials = specColors, daughter = dauColors)
           }
           else {
             parColors <- parColors[unique(annoY$parent)]
+            dauColors <- dauColors[unique(annoY$daughter)]
             
-            yAnnoColors <- list(parent = parColors)
+            yAnnoColors <- list(parent = parColors, daughter = dauColors)
           }
         }
         else {
-          yAnnoColors <- list()
+          dauColors <- dauColors[unique(annoY$daughter)] 
+          
+          yAnnoColors <- list(daughter = dauColors)
         }
       }
       else if ("parent" %in% colnames(annoY)) {
@@ -1042,6 +1162,7 @@ server <- function(session, input, output) {
     }
     
     annoColors <<- append(xAnnoColors,yAnnoColors)
+    print(annoColors)
     
     print("start sorting")
     annoYtest <<- annoY
@@ -1253,7 +1374,7 @@ server <- function(session, input, output) {
       mutate(across(everything(), as.character))
     
     print("start creating thePalette")
-    thePalette <<- readRDS("colorPalette.rds") #made using distinctthePalette
+    thePalette <<- readRDS("RequiredFiles/colorPalette.rds") #made using distinctthePalette
     NamesCols <- c()
     uniqueVals <- list()
     matchingColors <- list()
@@ -1311,6 +1432,9 @@ server <- function(session, input, output) {
     if ("specials" %in% names(fullColors)) {
       fullColors$specials <- annoColors$specials
     }
+    if("daughter" %in% names(fullColors)) {
+      fullColors$daughter <- annoColors$daughter
+    }
     print("finished creating thePalette")
     
     fullColors <<- fullColors
@@ -1356,23 +1480,6 @@ server <- function(session, input, output) {
     
     
     print("Testing")
-    # saveRDS(data1, "dataSave.rds")
-    # saveRDS(annoX, "annoXSave.rds")
-    # saveRDS(annoY, "annoYSave.rds")
-    # saveRDS(annoColors, "annoColorsSave.rds")
-    # saveRDS(heatmapColors, "heatcolorsSave.rds")
-    # saveRDS(rowName, "rowSave.rds")
-    # saveRDS(colName, "colSave.rds")
-    # saveRDS(seqBreaks, "seqSave.rds")
-    # 
-    # data1 <- readRDS("dataSave.rds")
-    # annoX <- readRDS("annoXSave.rds")
-    # annoY <- readRDS( "annoYSave.rds")
-    # annoColors <- readRDS( "annoColorsSave.rds")
-    # heatmapColors <- readRDS( "heatcolorsSave.rds")
-    # rowName <- readRDS( "rowSave.rds")
-    # colName <- readRDS( "colSave.rds")
-    # seqBreaks <- readRDS( "seqSave.rds")
     
     
     heatmap1 <<- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
@@ -1417,7 +1524,6 @@ server <- function(session, input, output) {
     grid.draw(heatmap1)
     grid.force()
     see <- grid.ls()
-    testing <- see$gPath
     partial <- testing[str_detect(testing, "layout::annotation_legend") ]
     check1 <- unlist(strsplit(partial, split='::', fixed=TRUE))
     check2 <- check1[!str_detect(check1, "layout") ]
