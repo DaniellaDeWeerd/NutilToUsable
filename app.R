@@ -112,7 +112,7 @@ ui <- fluidPage(
       downloadButton("colors","Download Colors"),
       downloadButton("justPlot","Download Just the Plot"),
       # downloadButton("anatomical","Download Anatomical"),
-      downloadButton("zach","Download Zach Compatable"),
+      downloadButton("mbh","Download MBH table"),
     ),
     mainPanel(
       textOutput("print"),
@@ -260,7 +260,7 @@ server <- function(session, input, output) {
     #for blank annotation
     table = vals$fullData %>% group_by(name,side)  %>%
       summarise()
-    table1 <- cbind (table, mouse=NA,sex = NA,treatment=NA,mpi=NA,genotype=NA,marker=NA,include="Y")
+    table1 <- cbind (table, mouse=NA,sex = NA,treatment=NA,mpi=NA,genotype=NA,marker=NA,batch = NA,include="Y")
     
     output$blankAnnotation <- downloadHandler(
       filename = function() {
@@ -305,6 +305,7 @@ server <- function(session, input, output) {
     genotype <- c()
     include <- c()
     sex <- c()
+    batch <- c()
     for (i in 1:length(vals$fullData$name)){
       name <- vals$fullData$name[i]
       side <- vals$fullData$side[i]
@@ -322,7 +323,7 @@ server <- function(session, input, output) {
       treatment <- c(treatment,treat)
       ### SEX ###
       se <- annotation[annotation$name == name & annotation$side == side,colnames(annotation) == "sex"]
-      if (length(treat) == 0) {treat <- NA}
+      if (length(se) == 0) {se <- NA}
       sex <- c(sex,se)
       ### MPI ###
       mp <- annotation[annotation$name == name & annotation$side == side,colnames(annotation) == "mpi"]
@@ -336,6 +337,10 @@ server <- function(session, input, output) {
       inc <- annotation[annotation$name == name & annotation$side == side,colnames(annotation) == "include"]
       if (length(inc) == 0) {inc <- NA}
       include <- c(include,inc)
+      ### BATCH ###
+      ba <- annotation[annotation$name == name & annotation$side == side,colnames(annotation) == "batch"]
+      if (length(ba) == 0) {ba <- NA}
+      batch <- c(batch,ba)
     }
     vals$fullData$marker <- marker
     vals$fullData$mouse <- mouse
@@ -344,6 +349,7 @@ server <- function(session, input, output) {
     vals$fullData$mpi <- mpi
     vals$fullData$genotype <- genotype
     vals$fullData$include <- include
+    vals$fullData$batch <- batch
     
     vals$fullData <- vals$fullData[vals$fullData$include == "Y",]
     
@@ -540,7 +546,7 @@ server <- function(session, input, output) {
     # vals$fullData <- vals$fullData[remove == "keep",]
     colnames(vals$fullData) <- gsub("\\."," ",colnames(vals$fullData))
     vals$fullData$forRemove <- vals$fullData$`Region ID`
-    ZBasics <<- c("mouse","Region ID","mpi","side","parent","daughter","genotype",'treatment','sex','marker','forRemove')
+    ZBasics <<- c("mouse","Region ID","mpi","side","parent","daughter","genotype",'treatment','sex','marker','forRemove','batch')
     fullData <<- vals$fullData
     ##calculate value and add to table
     if (input$percent == F & input$toGroup == F){
@@ -718,7 +724,7 @@ server <- function(session, input, output) {
     ZTable <<- as.data.frame(ZTable)
     print(class(ZTable$mouse))
     
-    output$zach <- downloadHandler(
+    output$mbh <- downloadHandler(
       filename = function() {
         paste0("ZachTable", ".csv")
       },
