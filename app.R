@@ -327,8 +327,8 @@ server <- function(session, input, output) {
     search <- c("CTXsp","fiber tracts","HPF","HY","Isocortex","OLF","PAL","STR","TH","MB","P","MY","CB")
     specials <- c()
     i <- 1
-    for (i in 1:length(vals$fullData$`Region ID`)){
-      id <- vals$fullData$`Region ID`[i]
+    for (i in 1:length(fullData$`Region ID`)){
+      id <- fullData$`Region ID`[i]
       row <- tree[tree$X10 == id,-10]
       searched <- search %in% row
       if (sum(searched)>0) {
@@ -338,17 +338,18 @@ server <- function(session, input, output) {
         specials <- c(specials,NA)
       }
     }
-    vals$fullData$specials <- specials
-    check1 <<- vals$fullData
-    fullData <<- vals$fullData
+    fullData$specials <- specials
+    check1 <<- fullData
+    fullData <<- fullData
+    vals$fullData <<- fullData
     
     #TO REMOVE
     #search <- c("fiber tracts","VS")
     regionsToRemove <<- c("")
     remove <- c()
     i <- 1
-    for (i in 1:length(vals$fullData$`Region ID`)){
-      id <- vals$fullData$`Region ID`[i]
+    for (i in 1:length(fullData$`Region ID`)){
+      id <- fullData$`Region ID`[i]
       row <- tree[tree$X10 == id,-10]
       searched <- regionsToRemove %in% row
       if (sum(searched)>0) {
@@ -358,8 +359,9 @@ server <- function(session, input, output) {
         remove <- c(remove,"keep")
       }
     }
-    vals$fullData <- vals$fullData[remove == "keep",]
-    fullData <<- vals$fullData
+    fullData <- fullData[remove == "keep",]
+    fullData <<- fullData
+    vals$fullData <<- fullData
     
     output$saveOutput1 <- downloadHandler(
       filename = function() {
