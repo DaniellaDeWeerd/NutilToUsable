@@ -232,8 +232,9 @@ ui <- fluidPage(
 
 server <- function(session, input, output) {
   ##### GLOBAL VARIABLES #####
-  vals <<- reactiveValues(
+  global <- reactiveValues(
     fullData = data.frame(matrix(nrow = 0, ncol = 13)),
+    tree = c()
   )
   
   observeEvent(input$colorScale,{
@@ -255,9 +256,9 @@ server <- function(session, input, output) {
       }
       side <- rep("left", length(toNormal[,1]))
       toAdd <- cbind(name,side,toNormal)
-      vals$fullData <- rbind(vals$fullData,toAdd)
+      global$fullData <- rbind(global$fullData,toAdd)
     }
-    vals$fullData <- vals$fullData[vals$fullData$`Region pixels` != 0,]
+    global$fullData <- global$fullData[global$fullData$`Region pixels` != 0,]
     
     output$print <- renderText({
       print(paste0(Sys.time()," Done Left"))
@@ -277,9 +278,9 @@ server <- function(session, input, output) {
       }
       side <- rep("right", length(toNormal[,1]))
       toAdd <- cbind(name,side,toNormal)
-      vals$fullData <- rbind(vals$fullData,toAdd)
+      global$fullData <- rbind(global$fullData,toAdd)
     }
-    vals$fullData <- vals$fullData[vals$fullData$`Region pixels` != 0,]
+    global$fullData <- global$fullData[global$fullData$`Region pixels` != 0,]
     
     output$print <- renderText({
       print(paste0(Sys.time()," Done Right"))
@@ -289,10 +290,11 @@ server <- function(session, input, output) {
   #Load tree
   observeEvent(input$tree,{
     # file <- input$tree
-    tree <<- readRDS("RequiredFiles/flippedTree.rds")#readRDS(file = file$datapath)
+    global$tree <- readRDS("RequiredFiles/flippedTree.rds")#readRDS(file = file$datapath)
+    tree <- global$tree
     print("Data read")
     
-    fullData <<- vals$fullData
+    fullData <- global$fullData
     
     #fix ectorhinal area (ECT)
     ECTrows <- grep("ecto",fullData$`Region Name`,ignore.case = T)
@@ -320,7 +322,7 @@ server <- function(session, input, output) {
     fullData$daughter <- daughter
     fullData$parent <- parent
     
-    vals$fullData <<- fullData
+    global$fullData <- fullData
     
     
     #CHANGE THIS to have it search for particular regions
@@ -339,13 +341,11 @@ server <- function(session, input, output) {
       }
     }
     fullData$specials <- specials
-    check1 <<- fullData
-    fullData <<- fullData
-    vals$fullData <<- fullData
+    global$fullData <- fullData
     
     #TO REMOVE
     #search <- c("fiber tracts","VS")
-    regionsToRemove <<- c("")
+    regionsToRemove <- c("")
     remove <- c()
     i <- 1
     for (i in 1:length(fullData$`Region ID`)){
@@ -360,8 +360,7 @@ server <- function(session, input, output) {
       }
     }
     fullData <- fullData[remove == "keep",]
-    fullData <<- fullData
-    vals$fullData <<- fullData
+    global$fullData <- fullData
     
     output$saveOutput1 <- downloadHandler(
       filename = function() {
@@ -374,7 +373,7 @@ server <- function(session, input, output) {
     )
     
     #for blank annotation
-    table = vals$fullData %>% group_by(name,side)  %>%
+    table = fullData %>% group_by(name,side)  %>%
       summarise()
     table1 <- cbind (table, mouse=NA,sex = NA,treatment=NA,mpi=NA,genotype=NA,marker=NA,batch = NA,include="Y")
     
@@ -397,9 +396,8 @@ server <- function(session, input, output) {
   observeEvent(input$reLoad1,{
     file <- input$reLoad1
     fullData <- readRDS(file$datapath)
-    vals$fullData <- fullData
-    fullData <<- fullData
-    tree <<- readRDS("RequiredFiles/flippedTree.rds")
+    global$fullData <- fullData
+    global$tree <- readRDS("RequiredFiles/flippedTree.rds")
     
     output$print <- renderText({
       print(paste0(Sys.time()," Done Loading Checkpoint 1"))
@@ -408,10 +406,14 @@ server <- function(session, input, output) {
   
   #Load annotation file
   observeEvent(input$annotation,{
+    
+    print("start reading")
     #read in annotation file
     file <- input$annotation
-    annotation <<- read.csv(file$datapath)
+    annotation <- read.csv(file$datapath)
     print("Data read")
+    
+    fullData <- global$fullData
     
     #Merge it with vals$fullData
     marker <- c()
@@ -422,9 +424,9 @@ server <- function(session, input, output) {
     include <- c()
     sex <- c()
     batch <- c()
-    for (i in 1:length(vals$fullData$name)){
-      name <- vals$fullData$name[i]
-      side <- vals$fullData$side[i]
+    for (i in 1:length(fullData$name)){
+      name <- fullData$name[i]
+      side <- fullData$side[i]
       ### MARKER ###
       mark <- annotation[annotation$name == name & annotation$side == side,colnames(annotation) == "marker"]
       if (length(mark) == 0) {mark <- NA}
@@ -458,33 +460,29 @@ server <- function(session, input, output) {
       if (length(ba) == 0) {ba <- NA}
       batch <- c(batch,ba)
     }
-    vals$fullData$marker <- marker
-    vals$fullData$mouse <- mouse
-    vals$fullData$sex <- sex
-    vals$fullData$treatment <- treatment
-    vals$fullData$mpi <- mpi
-    vals$fullData$genotype <- genotype
-    vals$fullData$include <- include
-    vals$fullData$batch <- batch
+    fullData$marker <- marker
+    fullData$mouse <- mouse
+    fullData$sex <- sex
+    fullData$treatment <- treatment
+    fullData$mpi <- mpi
+    fullData$genotype <- genotype
+    fullData$include <- include
+    fullData$batch <- batch
     
-    vals$fullData <- vals$fullData[vals$fullData$include == "Y",]
+    fullData <- fullData[fullData$include == "Y",]
     
-    check2 <<- vals$fullData
+    global$fullData <- fullData
     
     print("Done Merging Annotation and Check 2")
     
-    forAnno <<- vals$fullData
-    
     #add options to x,y,displayX, displayY
-    options <- colnames(vals$fullData)
+    options <- colnames(fullData)
     updateSelectizeInput(session, 'x', "Select your x axis variables to create heatmap", choices = options,options = list(create = F))
     updateSelectizeInput(session, 'y', "Select your y axis variables to create heatmap", choices = options,options = list(create = F))
     # updateSelectizeInput(session, 'displayX', "Select your variables to display on x axis", choices = options,options = list(create = F))
     updateSelectizeInput(session, 'displayY', "Select your variables to display on y axis", choices = options,options = list(create = F))
     
     print("Done Adding Options")
-    
-    fullData <<- vals$fullData
     
     output$saveOutput2 <- downloadHandler(
       filename = function() {
@@ -508,20 +506,19 @@ server <- function(session, input, output) {
     if (!"batch" %in% colnames(fullData)){
       fullData$batch <- 1
     }
-    vals$fullData <- fullData
+    global$fullData <- fullData
     
     #Fix ECT
-    fullData <<- vals$fullData 
     theCol <- grepl("name",colnames(fullData),ignore.case = T) & grepl("region",colnames(fullData),ignore.case = T)
     theCol <- which(theCol)
     theRows <- grep("ecto",fullData[,theCol],ignore.case = T)
     fullData[theRows,"parent"] <- "ECT"
-    vals$fullData <<- fullData
+    global$fullData <- fullData
     
-    checking1 <<- vals$fullData
-    tree <<- readRDS("RequiredFiles/flippedTree.rds")
+    global$tree <- readRDS("RequiredFiles/flippedTree.rds")
+    tree <- global$tree
     
-    options <- colnames(vals$fullData)
+    options <- colnames(fullData)
     updateSelectizeInput(session, 'x', "Select your x axis variables to create heatmap", choices = options,options = list(create = F))
     updateSelectizeInput(session, 'y', "Select your y axis variables to create heatmap", choices = options,options = list(create = F))
     # updateSelectizeInput(session, 'displayX', "Select your variables to display on x axis", choices = options,options = list(create = F))
@@ -538,20 +535,19 @@ server <- function(session, input, output) {
     if (!"batch" %in% colnames(fullData)){
       fullData$batch <- 1
     }
-    vals$fullData <- fullData
+    global$fullData <- fullData
     
     #Fix ECT
-    fullData <<- vals$fullData 
     theCol <- grepl("name",colnames(fullData),ignore.case = T) & grepl("region",colnames(fullData),ignore.case = T)
     theCol <- which(theCol)
     theRows <- grep("ectorh",fullData[,theCol],ignore.case = T)
     fullData[theRows,"parent"] <- "ECT"
-    vals$fullData <<- fullData
+    global$fullData <<- fullData
+  
+    global$tree <- readRDS("RequiredFiles/flippedTree.rds")
+    tree <- global$tree
     
-    checking1 <<- vals$fullData
-    tree <<- readRDS("RequiredFiles/flippedTree.rds")
-    
-    options <- colnames(vals$fullData)
+    options <- colnames(fullData)
     updateSelectizeInput(session, 'x', "Select your x axis variables to create heatmap", choices = options,options = list(create = F))
     updateSelectizeInput(session, 'y', "Select your y axis variables to create heatmap", choices = options,options = list(create = F))
     # updateSelectizeInput(session, 'displayX', "Select your variables to display on x axis", choices = options,options = list(create = F))
@@ -564,18 +560,19 @@ server <- function(session, input, output) {
   
   ##### GET OPTIONS #####
   observeEvent(input$options,{
-    x <<- input$x # recommended x : "mouse" and "marker" 
-    y <<- input$y # recommended y : "daughter" (or "parent") and "side"
-    displayX <<- input$x
-    displayY <<- input$displayY
+    x <- input$x # recommended x : "mouse" and "marker" 
+    y <- input$y # recommended y : "daughter" (or "parent") and "side"
+    displayX <- input$x
+    displayY <- input$displayY
+    tree <- global$tree
     
-    options1 <- unique(unlist(vals$fullData[,c(x)]))
+    options1 <- unique(unlist(global$fullData[,c(x)]))
     print(options1)
     updateSelectizeInput(session,"optionsX","Select your variables to see segmented on x axis", choices = options1,options = list(create = F), selected = options1)
-    options1 <- unique(unlist(vals$fullData[,c(x,y)]))
+    options1 <- unique(unlist(global$fullData[,c(x,y)]))
     updateSelectizeInput(session,"annoVariable","Select your variable to display on anatomical heatmap", choices = options1,options = list(create = F))
     
-    options2 <- colnames(vals$fullData)
+    options2 <- colnames(global$fullData)
     options2 <- options2[!grepl("load",options2,ignore.case = T)]
     
     if (any(grepl("inclusion",options2,ignore.case = T))){
@@ -606,19 +603,24 @@ server <- function(session, input, output) {
   ##### CREATE HEATMAP #####
   observeEvent(input$normal,{
     print("heatmap started")
-    chosenOptions <<- input$optionsX
-    nutilVariable <<- input$sumWith
-    groupBy <<- input$groupBy
-    xNames <<- input$xNames
-    yNames <<- input$yNames
-    fullData <<- vals$fullData
-    updateSliderInput(session,"colorScale", "Color Scale:", min = -100, max = 100, value = c(input$min_value,input$max_value),step = 0.5)
-    # fullData <- check2
-    vals$fullData$mouse <- as.character(vals$fullData$mouse)
+    x <- input$x # recommended x : "mouse" and "marker" 
+    y <- input$y # recommended y : "daughter" (or "parent") and "side"
+    displayX <- input$x
+    displayY <- input$displayY
+    chosenOptions <- input$optionsX
+    nutilVariable <- input$sumWith
+    groupBy <- input$groupBy
+    xNames <- input$xNames
+    yNames <- input$yNames
+    fullData <- global$fullData
+    tree <- global$tree
     
-    variableCheckPoint <<- vals$fullData
-    ToMessWith <<- vals$fullData
-    variableCheckPoint <- ToMessWith
+    updateSliderInput(session,"colorScale", "Color Scale:", min = -100, max = 100, value = c(input$min_value,input$max_value),step = 0.5)
+    
+    fullData$mouse <- as.character(fullData$mouse)
+    
+    variableCheckPoint <- fullData
+    
     print(colnames(variableCheckPoint))
     
     colnames(variableCheckPoint) <- gsub("\\."," ",colnames(variableCheckPoint))
@@ -627,14 +629,12 @@ server <- function(session, input, output) {
     
     if (grepl("Parent",nutilVariable)){
       variableCheckPoint$level <- variableCheckPoint$parent
-      vals$fullData$level <- vals$fullData$parent
-      vals$fullData <<- vals$fullData
-      variableCheckPoint <<- variableCheckPoint
+      fullData$level <- fullData$parent
+      global$fullData <- fullData
     } else if (grepl("Daughter",nutilVariable)){
       variableCheckPoint$level <- variableCheckPoint$daughter
-      variableCheckPoint <<- variableCheckPoint
-      vals$fullData$level <- vals$fullData$daughter
-      vals$fullData <<- vals$fullData
+      fullData$level <- fullData$daughter
+      global$fullData <- fullData
     }
     
     print("level designated")
@@ -652,8 +652,8 @@ server <- function(session, input, output) {
       variableCheckPoint <- merge(variableCheckPoint, test, by = c("mouse", "side", "level"))
       variableCheckPoint$nutilVariable <- variableCheckPoint$baseLoad
       variableCheckPoint <<- variableCheckPoint
-      vals$fullData <- merge(vals$fullData,variableCheckPoint[,c("mouse","side","level","nutilVariable")], by = c("mouse", "side", "level"))
-      vals$fullData <<- vals$fullData
+      fullData <- merge(fullData,variableCheckPoint[,c("mouse","side","level","nutilVariable")], by = c("mouse", "side", "level"))
+      global$fullData <- fullData
       print("NormalLoad Done")
       
     } else if (grepl("Neurite",nutilVariable)) {
@@ -672,9 +672,8 @@ server <- function(session, input, output) {
       #merge test with chekckpoint2 by mouse, side, and level
       variableCheckPoint <- merge(variableCheckPoint, test, by = c("mouse", "side", "level"))
       variableCheckPoint$nutilVariable <- variableCheckPoint$NeuriteLoad
-      variableCheckPoint <<- variableCheckPoint
-      vals$fullData <- merge(vals$fullData,variableCheckPoint[,c("mouse","side","level","nutilVariable")], by = c("mouse", "side", "level"))
-      vals$fullData <<- vals$fullData
+      fullData <- merge(fullData,variableCheckPoint[,c("mouse","side","level","nutilVariable")], by = c("mouse", "side", "level"))
+      global$fullData <- fullData
       print("NeuriteLoad Done")
       
     } else if (grepl("InclPerMM2",nutilVariable)) {
@@ -690,16 +689,15 @@ server <- function(session, input, output) {
       #merge test with chekckpoint2 by mouse, side, and level
       variableCheckPoint <- merge(variableCheckPoint, test, by = c("mouse", "side", "level"))
       variableCheckPoint$nutilVariable <- variableCheckPoint$InclPerMM2
-      variableCheckPoint <<- variableCheckPoint
-      vals$fullData <- merge(vals$fullData,variableCheckPoint[,c("mouse","side","level","nutilVariable")], by = c("mouse", "side", "level"))
-      vals$fullData <<- vals$fullData
+      fullData <- merge(fullData,variableCheckPoint[,c("mouse","side","level","nutilVariable")], by = c("mouse", "side", "level"))
+      global$fullData <- fullData
       print("InclPerMM2 Done")
       
     } else {
-      vals$fullData$nutilVariable <- vals$fullData[,nutilVariable]
-      vals$fullData <<- vals$fullData
+      fullData$nutilVariable <- fullData[,nutilVariable]
+      global$fullData <- fullData
     }
-    vals$fullData$nutilVariable <- as.numeric(vals$fullData$nutilVariable)
+    fullData$nutilVariable <- as.numeric(fullData$nutilVariable)
     print("Done setting everything for nutil Variable")
     # vals$fullData <- vals$fullData[,!colnames(vals$fullData) %in% c("Inclusion.area")]
     
@@ -711,14 +709,13 @@ server <- function(session, input, output) {
     toMerge <- tree[,c(1,11)]
     #left join
     
-    vals$fullData$daughterColor <- toMerge[match(vals$fullData$daughter, toMerge$X1),2]
-    vals$fullData$parentColor <- toMerge[match(vals$fullData$parent, toMerge$X1),2]
-    vals$fullData$specialsColor <- toMerge[match(vals$fullData$specials, toMerge$X1),2]
+    fullData$daughterColor <- toMerge[match(fullData$daughter, toMerge$X1),2]
+    fullData$parentColor <- toMerge[match(fullData$parent, toMerge$X1),2]
+    fullData$specialsColor <- toMerge[match(fullData$specials, toMerge$X1),2]
     
-    checkcolo <<-  vals$fullData
     print("here")
     
-    dauColors <- setNames(as.character(vals$fullData$daughterColor), vals$fullData$daughter)
+    dauColors <- setNames(as.character(fullData$daughterColor), fullData$daughter)
     dauColors <- dauColors[unique(names(dauColors))]
     testing <- match(names(dauColors),tree$X1)
     testing1 <- c(1:length(dauColors))
@@ -726,7 +723,7 @@ server <- function(session, input, output) {
     test <- test[order(test$testing),]
     dauColors <<- dauColors[test$testing1]
     
-    parColors <- setNames(as.character(vals$fullData$parentColor), vals$fullData$parent)
+    parColors <- setNames(as.character(fullData$parentColor), fullData$parent)
     parColors <- parColors[unique(names(parColors))]
     testing <- match(names(parColors),tree$X1)
     testing1 <- c(1:length(parColors))
@@ -736,7 +733,7 @@ server <- function(session, input, output) {
     
     print("midway")
     
-    specColors <- setNames(as.character(vals$fullData$specialsColor), vals$fullData$specials)
+    specColors <- setNames(as.character(fullData$specialsColor), fullData$specials)
     specColors <- specColors[unique(names(specColors))]
     testing <- match(names(specColors),tree$X1)
     testing1 <- c(1:length(specColors))
@@ -747,45 +744,28 @@ server <- function(session, input, output) {
     print("colors done")
     
     if (length(x) > 1) {
-      vals$fullData$x <- apply(vals$fullData[ ,x] , 1 , paste , collapse = "_" )
+      fullData$x <- apply(fullData[ ,x] , 1 , paste , collapse = "_" )
     }
     else {
-      vals$fullData$x <-vals$fullData[ ,x]
+      fullData$x <- fullData[ ,x]
     }
     
     if (length(y) > 1) {
-      vals$fullData$y <- apply(vals$fullData[ ,y] , 1 , paste , collapse = "_" )
+      fullData$y <- apply(fullData[ ,y] , 1 , paste , collapse = "_" )
     }
     else {
-      vals$fullData$y <-vals$fullData[ ,y]
+      fullData$y <- fullData[ ,y]
     }
     print("created new cols")
    
-    #Remove these regions
-    # theSearch <<- input$toRemove
-    # remove <- c()
-    # i <- 1
-    # for (i in 1:length(vals$fullData$`Region ID`)){
-    #   id <- vals$fullData$`Region ID`[i]
-    #   row <- tree[tree$X10 == id,-10]
-    #   searched <- theSearch %in% row
-    #   if (sum(searched)>0) {
-    #     remove <- c(remove,"remove")
-    #   }
-    #   else {
-    #     remove <- c(remove,"keep")
-    #   }
-    # }
-    # vals$fullData <- vals$fullData[remove == "keep",]
-    colnames(vals$fullData) <- gsub("\\."," ",colnames(vals$fullData))
-    vals$fullData$forRemove <- vals$fullData$`Region ID`
+    colnames(fullData) <- gsub("\\."," ",colnames(fullData))
+    fullData$forRemove <- fullData$`Region ID`
     ZBasics <<- c("mouse","Region ID","mpi","side","parent","daughter","genotype",'treatment','sex','marker','forRemove','batch')
-    fullData <<- vals$fullData
+    global$fullData <- fullData
     ##calculate value and add to table
     if (input$percent == F){ # & input$toGroup == F){
       print("testing1")
-      colnames(vals$fullData) <- gsub("\\."," ",colnames(vals$fullData))
-      fullData <<- vals$fullData
+      colnames(fullData) <- gsub("\\."," ",colnames(fullData))
       table <- aggregate(fullData[,c(displayX,displayY,"nutilVariable",ZBasics)], by =fullData[,c("x","y")], FUN=unique)
       print("testing1.5")
       table$value <- table[,"nutilVariable"]
@@ -810,8 +790,8 @@ server <- function(session, input, output) {
     }
     else if (input$percent == TRUE) {
       print("if percent")
-      colnames(vals$fullData) <- gsub("\\."," ",colnames(vals$fullData))
-      table <- aggregate(vals$fullData[,c(displayX,displayY,"nutilVariable",ZBasics)], by =vals$fullData[,c("x","y")], FUN=unique)
+      colnames(fullData) <- gsub("\\."," ",colnames(fullData))
+      table <- aggregate(fullData[,c(displayX,displayY,"nutilVariable",ZBasics)], by = fullData[,c("x","y")], FUN=unique)
       
       table$value <- table[,"nutilVariable"]
       
@@ -832,8 +812,6 @@ server <- function(session, input, output) {
       table$displayValue <- table$value
       newTable <- table
       newTable <- newTable[,! colnames(newTable) %in% c("nutilVariable")]
-      #Logit scale?
-      #Log scale maybe
     }
     # else if (input$toGroup == T){
     #   print("to Group")
@@ -890,7 +868,7 @@ server <- function(session, input, output) {
     #   
     # }
     else {
-      table <- aggregate(vals$fullData[,c(displayX,displayY,"nutilVariable",ZBasics)], by =vals$fullData[,c("x","y")], FUN=unique)
+      table <- aggregate(fullData[,c(displayX,displayY,"nutilVariable",ZBasics)], by = fullData[,c("x","y")], FUN=unique)
       
       table$value <- table[,"nutilVariable"]
       
@@ -910,11 +888,11 @@ server <- function(session, input, output) {
       newTable <- table
       newTable <- newTable[,! colnames(newTable) %in% c("nutilVariable")]
     }
-    valueTable <<- newTable
+    valueTable <- newTable
     print("done making table")
     
     #Remove these regions
-    theSearch <<- input$toRemove
+    theSearch <- input$toRemove
     remove <- c()
     i <- 1
     for (i in 1:length(valueTable$forRemove)){
@@ -936,8 +914,8 @@ server <- function(session, input, output) {
     
     #ZACHS Portion
     ZTable <- valueTable[,c(ZBasics,"ZachValue","displayValue")]
-    theMax <<- input$max_value
-    theMin <<- input$min_value
+    theMax <- input$max_value
+    theMin <- input$min_value
     toChangeMax <- ZTable$displayValue > theMax
     toChangeMin <- ZTable$displayValue < theMin
     toChangeMax[is.na(toChangeMax)] <- FALSE
@@ -951,8 +929,8 @@ server <- function(session, input, output) {
     ZTable$max <- theMax
     ZTable$min <- theMin
     #add column to ZTable for min_value
-    ZTable <<- apply(ZTable,2,as.character)
-    ZTable <<- as.data.frame(ZTable)
+    ZTable <- apply(ZTable,2,as.character)
+    ZTable <- as.data.frame(ZTable)
     print(class(ZTable$mouse))
     
     output$mbh <- downloadHandler(
@@ -996,7 +974,6 @@ server <- function(session, input, output) {
     annoY <- data.frame(annoY)
     colnames(annoY) <- displayY
     rownames(annoY) <- uniqueY
-    annoY <<- annoY
     
     annoX <- c()
     for (i in uniqueX) {
@@ -1011,10 +988,6 @@ server <- function(session, input, output) {
     annoX <- data.frame(annoX)
     colnames(annoX) <- displayX
     rownames(annoX) <- uniqueX
-    annoX <<- annoX
-    
-    check4 <<- data
-    data <- check4
     
     if (input$trim == TRUE) {
       moreThan <- 0.5 #if more than this percent is missing, remove
@@ -1096,10 +1069,8 @@ server <- function(session, input, output) {
     write.csv(annoY,"annoY.csv")
     write.csv(data,"data.csv")
     write.csv(annoX,"annoX.csv")
-    annoY1 <<- annoY
-    annoX1 <<- annoX
-    dataTest <<- data
-    data1 <<- data
+    
+    data1 <- data
     
     output$data <- downloadHandler(
       filename = function() {
@@ -1133,7 +1104,6 @@ server <- function(session, input, output) {
     
     print("done creating downloads")
     
-    annoX <- annoX1
     correct <- c()
     for (i in 1:length(annoX[,1])) {
       good = F
@@ -1153,11 +1123,11 @@ server <- function(session, input, output) {
     
     #Create the variables for the color palette
     breaks <- 20
-    newMin <<- input$min_value
-    newMax <<- input$max_value
+    newMin <- input$min_value
+    newMax <- input$max_value
     difference <- newMin-newMax
     breakNum <- abs(difference/(breaks+1))
-    seqBreaks <<- seq(newMin, newMax, by=breakNum)
+    seqBreaks <- seq(newMin, newMax, by=breakNum)
     data1[data1 > newMax] <- newMax
     data1[data1 < newMin] <- newMin
     
@@ -1405,19 +1375,14 @@ server <- function(session, input, output) {
     print(annoColors)
     
     print("start sorting")
-    annoYtest <<- annoY
-    annoXtest <<- annoX
-    data1test <<- data1
-    # copy <- annoYtest
+    
     rownames(annoY) <-  gsub("/", ".", rownames(annoY), fixed=TRUE)
     rownames(annoY) <-  gsub("-", ".", rownames(annoY), fixed=TRUE)
     rownames(annoY) <-  gsub(" ", ".", rownames(annoY), fixed=TRUE)
     colnames(data1) <-  gsub("/", ".", colnames(data1), fixed=TRUE)
     colnames(data1) <-  gsub("-", ".", colnames(data1), fixed=TRUE)
     colnames(data1) <-  gsub(" ", ".", colnames(data1), fixed=TRUE)
-    # data1 <- data1test
-    # annoX <- annoXtest
-    # annoY <- annoYtest
+    
     #Sorting by Side then ABA
     if ("side" %in% colnames(annoY) | "side" %in% colnames(annoX)) {
       print("yes side")
@@ -1529,15 +1494,10 @@ server <- function(session, input, output) {
     }
     print("done sorting")
     
-    dataKeep <<- data1
-    annoXKeep <<- annoX
-    annoYKeep <<- annoY
     
     #labels_col and labels_row
     print(xNames)
     print(colnames(annoX))
-    annoX <- annoXKeep
-    annoY <- annoYKeep
     
     #sort annox and y 
     
@@ -1580,7 +1540,6 @@ server <- function(session, input, output) {
     
     
     print("heatmap colors")
-    breaks <<- breaks
     #default colors
     if (input$inverted == T){
       heatmapColors <- viridis::inferno(breaks,direction = 1)
@@ -1622,7 +1581,7 @@ server <- function(session, input, output) {
       })
     }
 
-    heatmapColorsForZach <<- heatmapColors
+    heatmapColorsForZach <- heatmapColors
     #update colors download
     output$colors <- downloadHandler(
       filename = function() {
@@ -1633,15 +1592,13 @@ server <- function(session, input, output) {
       }
     )
     
-    laAnnoX <<- annoX
-    laAnnoY <<- annoY
     annoX <- annoX %>%
       mutate(across(everything(), as.character))
     annoY <- annoY %>%
       mutate(across(everything(), as.character))
     
     print("start creating thePalette")
-    thePalette <<- readRDS("RequiredFiles/colorPalette.rds") #made using distinctthePalette
+    thePalette <- readRDS("RequiredFiles/colorPalette.rds") #made using distinctthePalette
     NamesCols <- c()
     uniqueVals <- list()
     matchingColors <- list()
@@ -1704,21 +1661,8 @@ server <- function(session, input, output) {
     }
     print("finished creating thePalette")
     
-    fullColors <<- fullColors
-    saveAnnoX <<- annoX
-    saveAnnoY <<- annoY
-    # annoX <- saveAnnoX
-    # annoY <- saveAnnoY
-    
-    colName <<- colName
-    rowName <<- rowName
-    heatmapColors <<- heatmapColors
-    seqBreaks <<- seqBreaks
-    saveData <<- data1
-    # data1 <- saveData
     annoXWithout <- annoX[,!colnames(annoX) %in% c("daughter","parent","specials"), drop = FALSE]
     annoYWithout <- annoY[,!colnames(annoY) %in% c("daughter","parent","specials"), drop = FALSE]
-    
 
     set.seed(100)
     
@@ -1728,22 +1672,22 @@ server <- function(session, input, output) {
       print(paste("Min: ",min(data,na.rm = TRUE),", Max: ",max(data,na.rm = TRUE), sep = ""))
     })
     if (length(annoYWithout) != 0 & length(annoXWithout) != 0) {
-      heatmap2 <<- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
+      heatmap2 <- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
                             labels_col = colName,labels_row = rowName, color = heatmapColors, border_color=NA,
                             annotation_row = annoXWithout,annotation_col = annoYWithout, annotation_colors = fullColors)
     }
     else if (length(annoYWithout) != 0) {
-      heatmap2 <<- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
+      heatmap2 <- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
                             labels_col = colName,labels_row = rowName, color = heatmapColors, border_color=NA,
                             annotation_col = annoYWithout, annotation_colors = fullColors)
     }
     else if (length(annoXWithout) != 0) {
-      heatmap2 <<- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
+      heatmap2 <- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
                             labels_col = colName,labels_row = rowName, color = heatmapColors, border_color=NA,
                             annotation_row = annoXWithout, annotation_colors = fullColors)
     }
     else {
-      heatmap2 <<- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
+      heatmap2 <- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
                             labels_col = colName,labels_row = rowName, color = heatmapColors, border_color=NA,
                             annotation_colors = fullColors)
     }
@@ -1752,7 +1696,7 @@ server <- function(session, input, output) {
     print("Testing")
     
     
-    heatmap1 <<- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
+    heatmap1 <- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
                         labels_col = colName,labels_row = rowName, color = heatmapColors,border_color=NA,
                         annotation_row = annoX,annotation_col = annoY, annotation_colors = fullColors)
     
@@ -1820,7 +1764,7 @@ server <- function(session, input, output) {
     grid.newpage()
     grid.draw(theLegend)
     grid.draw(theGraph)
-    FullPlot <<- grid.grab()
+    FullPlot <- grid.grab()
     
     saveRDS(FullPlot,"fullPlot.rds")
     
@@ -1946,7 +1890,7 @@ server <- function(session, input, output) {
       colnames(fullData)[otherCols] <- "theValue"
     }
     
-    fullData <<- fullData
+    global$fullData <- fullData
     
     output$print_2 <- renderText({
       print(paste0(Sys.time()," Done loading Input file"))
@@ -1956,7 +1900,9 @@ server <- function(session, input, output) {
   #Load tree
   observeEvent(input$tree_2,{
     # file <- input$tree
-    tree <<- readRDS("RequiredFiles/flippedTreeMouse.rds")#readRDS(file = file$datapath)
+    global$tree <- readRDS("RequiredFiles/flippedTreeMouse.rds")#readRDS(file = file$datapath)
+    tree <- global$tree
+    fullData <- global$fullData
     print("Data read")
     
     #give Full data its 'Region Name'
@@ -1999,9 +1945,8 @@ server <- function(session, input, output) {
       }
     }
     fullData$specials <- specials
-    check1 <<- fullData
     
-    fullData <<- fullData
+    global$fullData <- fullData
     
     output$saveOutput1_2 <- downloadHandler(
       filename = function() {
@@ -2037,9 +1982,8 @@ server <- function(session, input, output) {
   observeEvent(input$reLoad1_2,{
     file <- input$reLoad1_2
     fullData <- readRDS(file$datapath)
-    fullData <- fullData
-    fullData <<- fullData
-    tree <<- readRDS("RequiredFiles/flippedTreeMouse.rds")
+    global$fullData <- fullData
+    global$tree <- readRDS("RequiredFiles/flippedTreeMouse.rds")
     
     output$print_2 <- renderText({
       print(paste0(Sys.time()," Done Loading Checkpoint 1"))
@@ -2050,7 +1994,9 @@ server <- function(session, input, output) {
   observeEvent(input$annotation_2,{
     #read in annotation file
     file <- input$annotation_2
-    annotation <<- read.csv(file$datapath)
+    annotation <- read.csv(file$datapath)
+    fullData <- global$fullData
+    tree <- global$tree
     print("Data read")
     
     #Merge it with fullData
@@ -2109,11 +2055,7 @@ server <- function(session, input, output) {
     
     fullData <- fullData[fullData$include == "Y",]
     
-    check2 <<- fullData
-    
     print("Done Merging Annotation and Check 2")
-    
-    forAnno <<- fullData
     
     #add options to x,y,displayX, displayY
     options <- colnames(fullData)
@@ -2124,7 +2066,7 @@ server <- function(session, input, output) {
     
     print("Done Adding Options")
     
-    fullData <<- fullData
+    global$fullData <- fullData
     
     output$saveOutput2_2 <- downloadHandler(
       filename = function() {
@@ -2145,13 +2087,14 @@ server <- function(session, input, output) {
   observeEvent(input$reLoad2csv_2,{
     file <- input$reLoad2csv_2
     fullData <- read.csv(file$datapath)
+    global$fullData <- fullData
+    tree <- global$fullData
     if (!"batch" %in% colnames(fullData)){
       fullData$batch <- 1
     }
-    fullData <<- fullData
     
-    checking1 <<- fullData
-    tree <<- readRDS("RequiredFiles/flippedTreeMouse.rds")
+    global$tree <- readRDS("RequiredFiles/flippedTreeMouse.rds")
+    tree <- global$tree
     
     options <- colnames(fullData)
     updateSelectizeInput(session, 'x_2', "Select your x axis variables to create heatmap", choices = options,options = list(create = F))
@@ -2166,10 +2109,12 @@ server <- function(session, input, output) {
   
   ##### GET OPTIONS #####
   observeEvent(input$options_2,{
-    x <<- input$x_2 # recommended x : "mouse" and "marker" 
-    y <<- input$y_2 # recommended y : "daughter" (or "parent") and "side"
-    displayX <<- input$x_2
-    displayY <<- input$displayY_2
+    x <- input$x_2 # recommended x : "mouse" and "marker" 
+    y <- input$y_2 # recommended y : "daughter" (or "parent") and "side"
+    displayX <- input$x_2
+    displayY <- input$displayY_2
+    fullData <- global$fullData
+    tree <- global$fullData
     
     options1 <- unique(unlist(fullData[,c(x)]))
     print(options1)
@@ -2192,11 +2137,16 @@ server <- function(session, input, output) {
   ##### CREATE HEATMAP #####
   observeEvent(input$normal_2,{
     print("heatmap started")
-    chosenOptions <<- input$optionsX_2
-    nutilVariable <<- "theValue"
-    xNames <<- input$xNames_2
-    yNames <<- input$yNames_2
-    fullData <<- fullData
+    x <- input$x_2 # recommended x : "mouse" and "marker" 
+    y <- input$y_2 # recommended y : "daughter" (or "parent") and "side"
+    displayX <- input$x_2
+    displayY <- input$displayY_2
+    chosenOptions <- input$optionsX_2
+    nutilVariable <- "theValue"
+    xNames <- input$xNames_2
+    yNames <- input$yNames_2
+    fullData <- global$fullData
+    tree <- global$tree
     updateSliderInput(session,"colorScale_2", "Color Scale:", min = -100, max = 100, value = c(input$min_value_2,input$max_value_2),step = 0.5)
     # fullData <- check2
     fullData$mouse <- as.character(fullData$mouse)
@@ -2215,7 +2165,6 @@ server <- function(session, input, output) {
     fullData$parentColor <- toMerge[match(fullData$parent, toMerge$X1),2]
     fullData$specialsColor <- toMerge[match(fullData$specials, toMerge$X1),2]
     
-    checkcolo <<-  fullData
     print("here")
     
     dauColors <- setNames(as.character(fullData$daughterColor), fullData$daughter)
@@ -2224,7 +2173,7 @@ server <- function(session, input, output) {
     testing1 <- c(1:length(dauColors))
     test <- data.frame(testing,testing1)
     test <- test[order(test$testing),]
-    dauColors <<- dauColors[test$testing1]
+    dauColors <- dauColors[test$testing1]
     
     parColors <- setNames(as.character(fullData$parentColor), fullData$parent)
     parColors <- parColors[unique(names(parColors))]
@@ -2232,7 +2181,7 @@ server <- function(session, input, output) {
     testing1 <- c(1:length(parColors))
     test <- data.frame(testing,testing1)
     test <- test[order(test$testing),]
-    parColors <<- parColors[test$testing1]
+    parColors <- parColors[test$testing1]
     
     print("midway")
     
@@ -2242,7 +2191,7 @@ server <- function(session, input, output) {
     testing1 <- c(1:length(specColors))
     test <- data.frame(testing,testing1)
     test <- test[order(test$testing),]
-    specColors <<- specColors[test$testing1]
+    specColors <- specColors[test$testing1]
     
     print("colors done")
     
@@ -2263,13 +2212,12 @@ server <- function(session, input, output) {
     colnames(fullData) <- gsub("\\."," ",colnames(fullData))
     fullData$`Region ID` <- fullData$id
     fullData$forRemove <- fullData$`Region ID`
-    ZBasics <<- c("mouse","Region ID","mpi","side","parent","daughter","genotype",'treatment','sex','marker','forRemove','batch')
-    fullData <<- fullData
+    ZBasics <- c("mouse","Region ID","mpi","side","parent","daughter","genotype",'treatment','sex','marker','forRemove','batch')
+    global$fullData <- fullData
     ##calculate value and add to table
     if (input$percent_2 == F){ # & input$toGroup == F){
       print("testing1")
       colnames(fullData) <- gsub("\\."," ",colnames(fullData))
-      fullData <<- fullData
       table <- aggregate(fullData[,c(displayX,displayY,"nutilVariable",ZBasics)], by =fullData[,c("x","y")], FUN=unique)
       print("testing1.5")
       table$value <- table[,"nutilVariable"]
@@ -2339,11 +2287,11 @@ server <- function(session, input, output) {
       newTable <- table
       newTable <- newTable[,! colnames(newTable) %in% c("nutilVariable")]
     }
-    valueTable <<- newTable
+    valueTable <- newTable
     print("done making table")
     
     #Remove these regions
-    theSearch <<- input$toRemove_2
+    theSearch <- input$toRemove_2
     remove <- c()
     i <- 1
     for (i in 1:length(valueTable$forRemove)){
@@ -2359,14 +2307,13 @@ server <- function(session, input, output) {
     }
     valueTable <- valueTable[remove == "keep",]
     
-    check3 <<- valueTable
     
     print("Done getting values for table and Check 3")
     
     #ZACHS Portion
     ZTable <- valueTable[,c(ZBasics,"ZachValue","displayValue")]
-    theMax <<- input$max_value_2
-    theMin <<- input$min_value_2
+    theMax <- input$max_value_2
+    theMin <- input$min_value_2
     toChangeMax <- ZTable$displayValue > theMax
     toChangeMin <- ZTable$displayValue < theMin
     toChangeMax[is.na(toChangeMax)] <- FALSE
@@ -2380,8 +2327,8 @@ server <- function(session, input, output) {
     ZTable$max <- theMax
     ZTable$min <- theMin
     #add column to ZTable for min_value
-    ZTable <<- apply(ZTable,2,as.character)
-    ZTable <<- as.data.frame(ZTable)
+    ZTable <- apply(ZTable,2,as.character)
+    ZTable <- as.data.frame(ZTable)
     print(class(ZTable$mouse))
     
     output$mbh_2 <- downloadHandler(
@@ -2440,10 +2387,6 @@ server <- function(session, input, output) {
     annoX <- data.frame(annoX)
     colnames(annoX) <- displayX
     rownames(annoX) <- uniqueX
-    annoX <<- annoX
-    
-    check4 <<- data
-    data <- check4
     
     if (input$trim_2 == TRUE) {
       moreThan <- 0.5 #if more than this percent is missing, remove
@@ -2525,10 +2468,7 @@ server <- function(session, input, output) {
     write.csv(annoY,"annoY.csv")
     write.csv(data,"data.csv")
     write.csv(annoX,"annoX.csv")
-    annoY1 <<- annoY
-    annoX1 <<- annoX
-    dataTest <<- data
-    data1 <<- data
+    data1 <- data
     
     output$data_2 <- downloadHandler(
       filename = function() {
@@ -2562,7 +2502,6 @@ server <- function(session, input, output) {
     
     print("done creating downloads")
     
-    annoX <- annoX1
     correct <- c()
     for (i in 1:length(annoX[,1])) {
       good = F
@@ -2582,11 +2521,11 @@ server <- function(session, input, output) {
     
     #Create the variables for the color palette
     breaks <- 20
-    newMin <<- input$min_value_2
-    newMax <<- input$max_value_2
+    newMin <- input$min_value_2
+    newMax <- input$max_value_2
     difference <- newMin-newMax
     breakNum <- abs(difference/(breaks+1))
-    seqBreaks <<- seq(newMin, newMax, by=breakNum)
+    seqBreaks <- seq(newMin, newMax, by=breakNum)
     data1[data1 > newMax] <- newMax
     data1[data1 < newMin] <- newMin
     
@@ -2834,9 +2773,6 @@ server <- function(session, input, output) {
     print(annoColors)
     
     print("start sorting")
-    annoYtest <<- annoY
-    annoXtest <<- annoX
-    data1test <<- data1
     # copy <- annoYtest
     rownames(annoY) <-  gsub("/", ".", rownames(annoY), fixed=TRUE)
     rownames(annoY) <-  gsub("-", ".", rownames(annoY), fixed=TRUE)
@@ -2844,9 +2780,7 @@ server <- function(session, input, output) {
     colnames(data1) <-  gsub("/", ".", colnames(data1), fixed=TRUE)
     colnames(data1) <-  gsub("-", ".", colnames(data1), fixed=TRUE)
     colnames(data1) <-  gsub(" ", ".", colnames(data1), fixed=TRUE)
-    # data1 <- data1test
-    # annoX <- annoXtest
-    # annoY <- annoYtest
+    
     #Sorting by Side then ABA
     if ("side" %in% colnames(annoY) | "side" %in% colnames(annoX)) {
       print("yes side")
@@ -2958,15 +2892,9 @@ server <- function(session, input, output) {
     }
     print("done sorting")
     
-    dataKeep <<- data1
-    annoXKeep <<- annoX
-    annoYKeep <<- annoY
-    
     #labels_col and labels_row
     print(xNames)
     print(colnames(annoX))
-    annoX <- annoXKeep
-    annoY <- annoYKeep
     
     #sort annox and y 
     
@@ -3009,7 +2937,7 @@ server <- function(session, input, output) {
     
     
     print("heatmap colors")
-    breaks <<- breaks
+    breaks <- breaks
     #default colors
     if (input$inverted_2 == T){
       heatmapColors <- viridis::inferno(breaks,direction = 1)
@@ -3062,15 +2990,13 @@ server <- function(session, input, output) {
       }
     )
     
-    laAnnoX <<- annoX
-    laAnnoY <<- annoY
     annoX <- annoX %>%
       mutate(across(everything(), as.character))
     annoY <- annoY %>%
       mutate(across(everything(), as.character))
     
     print("start creating thePalette")
-    thePalette <<- readRDS("RequiredFiles/colorPalette.rds") #made using distinctthePalette
+    thePalette <- readRDS("RequiredFiles/colorPalette.rds") #made using distinctthePalette
     NamesCols <- c()
     uniqueVals <- list()
     matchingColors <- list()
@@ -3133,18 +3059,6 @@ server <- function(session, input, output) {
     }
     print("finished creating thePalette")
     
-    fullColors <<- fullColors
-    saveAnnoX <<- annoX
-    saveAnnoY <<- annoY
-    # annoX <- saveAnnoX
-    # annoY <- saveAnnoY
-    
-    colName <<- colName
-    rowName <<- rowName
-    heatmapColors <<- heatmapColors
-    seqBreaks <<- seqBreaks
-    saveData <<- data1
-    # data1 <- saveData
     annoXWithout <- annoX[,!colnames(annoX) %in% c("daughter","parent","specials"), drop = FALSE]
     annoYWithout <- annoY[,!colnames(annoY) %in% c("daughter","parent","specials"), drop = FALSE]
     
@@ -3157,22 +3071,22 @@ server <- function(session, input, output) {
       print(paste("Min: ",min(data,na.rm = TRUE),", Max: ",max(data,na.rm = TRUE), sep = ""))
     })
     if (length(annoYWithout) != 0 & length(annoXWithout) != 0) {
-      heatmap2 <<- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
+      heatmap2 <- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
                             labels_col = colName,labels_row = rowName, color = heatmapColors, border_color=NA,
                             annotation_row = annoXWithout,annotation_col = annoYWithout, annotation_colors = fullColors)
     }
     else if (length(annoYWithout) != 0) {
-      heatmap2 <<- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
+      heatmap2 <- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
                             labels_col = colName,labels_row = rowName, color = heatmapColors, border_color=NA,
                             annotation_col = annoYWithout, annotation_colors = fullColors)
     }
     else if (length(annoXWithout) != 0) {
-      heatmap2 <<- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
+      heatmap2 <- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
                             labels_col = colName,labels_row = rowName, color = heatmapColors, border_color=NA,
                             annotation_row = annoXWithout, annotation_colors = fullColors)
     }
     else {
-      heatmap2 <<- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
+      heatmap2 <- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
                             labels_col = colName,labels_row = rowName, color = heatmapColors, border_color=NA,
                             annotation_colors = fullColors)
     }
@@ -3181,7 +3095,7 @@ server <- function(session, input, output) {
     print("Testing")
     
     
-    heatmap1 <<- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
+    heatmap1 <- pheatmap(data1,fontsize_row = 5,fontsize_col = 5,cluster_rows = F, main = "Both", breaks = seqBreaks,cluster_cols = F,cellwidth = 5 ,cellheight = 5, 
                           labels_col = colName,labels_row = rowName, color = heatmapColors,border_color=NA,
                           annotation_row = annoX,annotation_col = annoY, annotation_colors = fullColors)
     
@@ -3249,7 +3163,7 @@ server <- function(session, input, output) {
     grid.newpage()
     grid.draw(theLegend)
     grid.draw(theGraph)
-    FullPlot <<- grid.grab()
+    FullPlot <- grid.grab()
     
     saveRDS(FullPlot,"fullPlot.rds")
     
@@ -3285,8 +3199,6 @@ server <- function(session, input, output) {
     noExtras <- grid.grab()
     
     print("done creating merge")
-    
-    
     
     print(paste("Min: ",min(data,na.rm = TRUE),", Max: ",max(data,na.rm = TRUE), sep = ""))
     
@@ -3333,179 +3245,6 @@ server <- function(session, input, output) {
     
   })
   
-  
-  
-  ##### ANATOMICAL VIEW #####
-  # observeEvent(input$SVG,{
-  #   # file <- input$SVG
-  #   print("started loading svg")
-  #   SVG <- readRDS("svgData.rds")#file = file$datapath)
-  # View(SVG[SVG$id == 564 & SVG$keyName == 46,])
-  #   
-  #   SVG <- SVG[SVG$keyName %in% c(23,46,67,82,88,96),]
-  #   SVG$id <- as.numeric(SVG$id)
-  #   colnames(SVG)[2] <- "Region ID"
-  #   SVG <<- SVG
-  #   chosenOptions <<- input$optionsX
-  #   nutilVariable <<- input$sumWith
-  #   groupBy <<- input$groupBy
-  #   annoVariable <<- input$annoVariable
-  #   print("Done loading SVG")
-  #   
-  #   view(SVG)
-  #   output$print <- renderText({
-  #     print("Done Loading SVG")
-  #   })
-  # })
-  # 
-  # #use the table from before to create heatmap. look at untitled.r for working anatomical
-  # observeEvent(input$anatomical,{
-  #   #Create x and y cols
-  #   if (length(x) > 1) {
-  #     forAnno$x <- apply(forAnno[ ,x] , 1 , paste , collapse = "_" )
-  #   }
-  #   else {
-  #     forAnno$x <- forAnno[ ,x]
-  #   }
-  #   
-  #   if (length(y) > 1) {
-  #     forAnno$y <- apply(forAnno[ ,y] , 1 , paste , collapse = "_" )
-  #   }
-  #   else {
-  #     forAnno$y <- forAnno[ ,y]
-  #   }
-  #   print("created new cols")
-  #   
-  #   savecols <- c()
-  #   for (i in 1:length(colnames(forAnno))) {
-  #     currentCol <- forAnno[,i]
-  #     if (any(currentCol %in% annoVariable) == TRUE) {
-  #       savecols <- c(savecols,i)
-  #     }
-  #   }
-  #   savecols <- as.numeric(savecols)
-  #   savecols <- colnames(forAnno)[savecols]
-  #   #table based on x and y with displays being included using unique
-  #   table <- aggregate(forAnno[,c(nutilVariable,groupBy,"Region ID",savecols)], by = forAnno[,groupBy], FUN=unique)
-  #   print("tabled")
-  #   
-  #   table$toSum <- table[,nutilVariable]
-  #   
-  #   sum <- c()
-  #   for (i in 1:length(table$toSum)){
-  #     sum <- c(sum,sum(table$toSum[[i]]))
-  #   }
-  #   table$sum <- sum
-  #   tableKeep <- table[,c(groupBy,"sum")]
-  #   
-  #   table <- aggregate(forAnno[,c(nutilVariable,groupBy,"Region ID",savecols)], by =forAnno[,c("x","y")], FUN=unique)
-  #   
-  #   newTable <- table %>% left_join( tableKeep, 
-  #                                    by=groupBy)
-  #   newTable$toSum <- newTable[,nutilVariable]
-  
-  # if (input$percent == TRUE) {
-  #   newTable$value <- newTable$toSum*100
-  #   if (input$log == T) {
-  #     newTable$value <- newTable$value + 0.00001
-  #     newTable$value <- log10(newTable$value)
-  #   }
-  #   #Logit scale?
-  #   #Log scale maybe
-  # }
-  # else {
-  #   newTable$value <- newTable$toSum/newTable$sum*100
-  #   if (input$log == T) {
-  #     newTable$value <- newTable$value + 0.00001
-  #     newTable$value <- log10(newTable$value)
-  #   }
-  #   #Linear mostly
-  # }
-  #   
-  #   annoTable <<- newTable
-  #   theTable <- annoTable
-  #   colnames(theTable)[1:2] <- c("X","Y")
-  #   write.csv(theTable,"check4.csv")
-  #   
-  #   toKeepRegions <- theTable %>% filter_all(any_vars(. %in% annoVariable))
-  #   toKeepRegions <- unique(toKeepRegions$`Region ID`)
-  #   
-  #   newMin <- input$colorScale[1]
-  #   newMax <- input$colorScale[2]
-  #   
-  #   for (vari in annoVariable) {
-  #     #only data for current variable
-  #     segmented <- theTable %>% filter_all(any_vars(. %in% vari))
-  #     segmented$`Region ID` <- as.numeric(segmented$`Region ID`)
-  #     if ("daughter" %in% groupBy){
-  #       colnames(segmented)[colnames(segmented)=="daughter"] <- "X1"
-  #     }
-  #     else if ("parent" %in% groupBy){
-  #       colnames(segmented)[colnames(segmented)=="parent"] <- "X1"
-  #     }
-  #     segmented1 <- left_join(segmented,tree[,c("X1","X10")], by = "X1")
-  #     table <- aggregate(segmented1[,c("value")], by = segmented1[,c("X1","X10","side")], FUN=mean)
-  #     colnames(table)[4] <- "value"
-  #     
-  #     #join with svg
-  #     colnames(table)[colnames(table)=="X10"] <- "Region ID"
-  #     table$`Region ID` <- as.numeric(table$`Region ID`)
-  #     colnames(table)[colnames(table)=="side"] <- "hemi"
-  #     testing <- left_join(SVG, table, by=c("Region ID","hemi"))
-  #     testing1 <- testing[testing$`Region ID` %in% toKeepRegions,]
-  #     
-  #     #create anatomical heat map
-  #     p <- ggplot(testing1, aes(x = x, y = y)) +
-  #       geom_polygon(aes(fill = value, group = unique), #fill = value,
-  #                    color = "black",
-  #                    size = .25) +
-  #       scale_y_reverse() + facet_wrap( ~ keyName, ncol = 3) +
-  #       theme_classic(12) +
-  #       scale_fill_gradientn(colours=rev(viridis::inferno(20)),limits=c(newMin,newMax),na.value = "grey",n.breaks=20)+
-  #       coord_fixed() +
-  #       ggtitle(vari) +
-  #       theme(
-  #         plot.title = element_text(hjust = 0.5,face = "bold"),
-  #         axis.line = element_blank(),
-  #         axis.text.x = element_blank(),
-  #         axis.text.y = element_blank(),
-  #         axis.ticks = element_blank(),
-  #         axis.title.x = element_blank(),
-  #         axis.title.y = element_blank(),
-  #         panel.background = element_blank(),
-  #         panel.border = element_blank(),
-  #         panel.grid.major = element_blank(),
-  #         panel.grid.minor = element_blank(),
-  #         plot.background = element_blank(),
-  #         legend.position = "bottom",
-  #         legend.title = element_blank(),
-  #         legend.key.width = unit(3.5, 'cm'),
-  #         strip.background = element_blank()
-  #       )
-  #     ggsave(paste(vari,".pdf",sep=""), p, width = 10, height = 10)
-  #   }
-  #   
-  #   library(qpdf)
-  #   files <- list.files(pattern = "\\.pdf$")
-  #   output$anatomical <- downloadHandler(
-  #     filename = function() {
-  #       paste0("anatomical", ".pdf")
-  #     },
-  #     content = function(file) {
-  #       qpdf::pdf_combine(input = files,
-  #                         output = file)
-  #       print("Done Downloading Anatomical")
-  #     }
-  #   )
-  #   
-  #   output$normPlot <- renderPlot({
-  #     p
-  #   })
-  #   
-  #   output$print <- renderText({
-  #     print("Done Saving Plots")
-  #   })
-  # })
 }
 
 
