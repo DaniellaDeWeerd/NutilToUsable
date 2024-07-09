@@ -9,7 +9,6 @@ library(tidyverse)
 library(colourpicker)
 library(grid)
 library(gridExtra)
-
 library(data.tree)
 
 
@@ -290,7 +289,7 @@ server <- function(session, input, output) {
   #Load tree
   observeEvent(input$tree,{
     # file <- input$tree
-    global$tree <- readRDS("RequiredFiles/flippedTree.rds")#readRDS(file = file$datapath)
+    global$tree <- readRDS("RequiredFiles/flippedTreeMouse.rds")#readRDS(file = file$datapath)
     tree <- global$tree
     print("Data read")
     
@@ -397,7 +396,7 @@ server <- function(session, input, output) {
     file <- input$reLoad1
     fullData <- readRDS(file$datapath)
     global$fullData <- fullData
-    global$tree <- readRDS("RequiredFiles/flippedTree.rds")
+    global$tree <- readRDS("RequiredFiles/flippedTreeMouse.rds")
     
     output$print <- renderText({
       print(paste0(Sys.time()," Done Loading Checkpoint 1"))
@@ -515,7 +514,7 @@ server <- function(session, input, output) {
     fullData[theRows,"parent"] <- "ECT"
     global$fullData <- fullData
     
-    global$tree <- readRDS("RequiredFiles/flippedTree.rds")
+    global$tree <- readRDS("RequiredFiles/flippedTreeMouse.rds")
     tree <- global$tree
     
     options <- colnames(fullData)
@@ -542,9 +541,9 @@ server <- function(session, input, output) {
     theCol <- which(theCol)
     theRows <- grep("ectorh",fullData[,theCol],ignore.case = T)
     fullData[theRows,"parent"] <- "ECT"
-    global$fullData <<- fullData
+    global$fullData <- fullData
   
-    global$tree <- readRDS("RequiredFiles/flippedTree.rds")
+    global$tree <- readRDS("RequiredFiles/flippedTreeMouse.rds")
     tree <- global$tree
     
     options <- colnames(fullData)
@@ -582,7 +581,7 @@ server <- function(session, input, output) {
     #choose variables to sum with
     updateSelectizeInput(session,"sumWith","Select the nutil variable to create value with",choices=c("ParentLoad","DaughterLoad","ParentInclPerMM2","DaughterInclPerMM2",options2),options = list(create = FALSE))
     
-    combinedvars <<- c(x,y)
+    combinedvars <- c(x,y)
     #choose variables to group by
     updateSelectizeInput(session,"groupBy","Select the variables to group by",choices=combinedvars,options = list(create = FALSE))
     
@@ -651,7 +650,7 @@ server <- function(session, input, output) {
       #merge test with chekckpoint2 by mouse, side, and level
       variableCheckPoint <- merge(variableCheckPoint, test, by = c("mouse", "side", "level"))
       variableCheckPoint$nutilVariable <- variableCheckPoint$baseLoad
-      variableCheckPoint <<- variableCheckPoint
+      variableCheckPoint <- variableCheckPoint
       fullData <- merge(fullData,variableCheckPoint[,c("mouse","side","level","nutilVariable")], by = c("mouse", "side", "level"))
       global$fullData <- fullData
       print("NormalLoad Done")
@@ -760,7 +759,7 @@ server <- function(session, input, output) {
    
     colnames(fullData) <- gsub("\\."," ",colnames(fullData))
     fullData$forRemove <- fullData$`Region ID`
-    ZBasics <<- c("mouse","Region ID","mpi","side","parent","daughter","genotype",'treatment','sex','marker','forRemove','batch')
+    ZBasics <- c("mouse","Region ID","mpi","side","parent","daughter","genotype",'treatment','sex','marker','forRemove','batch')
     global$fullData <- fullData
     ##calculate value and add to table
     if (input$percent == F){ # & input$toGroup == F){
@@ -908,7 +907,7 @@ server <- function(session, input, output) {
     }
     valueTable <- valueTable[remove == "keep",]
     
-    check3 <<- valueTable
+    check3 <- valueTable
     
     print("Done getting values for table and Check 3")
     
@@ -952,7 +951,7 @@ server <- function(session, input, output) {
 
     forData <- valueTable[,c("x","y","value")]
     attempt <- forData %>%
-      pivot_wider(names_from=c(y), values_from=value)
+      pivot_wider(names_from=c(y), values_from=value, names_repair = "minimal")
     attempt <- data.frame(attempt)
     rownames(attempt) <- attempt$x
     data <- attempt[,-1]
@@ -1042,7 +1041,7 @@ server <- function(session, input, output) {
             remove <- c(remove, F)
           }
         }
-        data <- data[,remove == F, drop = F]
+        data <- data[,remove == F,, drop = F]
         annoY <- annoY[remove == F,,drop = F]
         
         testing <- rowSums(is.na(data))
@@ -1371,7 +1370,7 @@ server <- function(session, input, output) {
       yAnnoColors <- list()
     }
     
-    annoColors <<- append(xAnnoColors,yAnnoColors)
+    annoColors <- append(xAnnoColors,yAnnoColors)
     print(annoColors)
     
     print("start sorting")
@@ -1392,7 +1391,7 @@ server <- function(session, input, output) {
         side <- annoY$side
         test <- data.frame(testing,testing1,side)
         test <- test[order(test$side,test$testing),]
-        annoY <- annoY[test$testing1,]
+        annoY <- annoY[test$testing1,,drop = F]
         data1 <- data1[,test$testing1]
       }
       else if ("parent" %in% colnames(annoX)) {
@@ -1401,7 +1400,7 @@ server <- function(session, input, output) {
         side <- annoX$side
         test <- data.frame(testing,testing1,side)
         test <- test[order(test$side,test$testing),]
-        annoX <- annoX[test$testing1,]
+        annoX <- annoX[test$testing1,,drop = F]
         data1 <- data1[test$testing1,]
       }
       else if ("specials" %in% colnames(annoY)) {
@@ -1410,7 +1409,7 @@ server <- function(session, input, output) {
         side <- annoY$side
         test <- data.frame(testing,testing1,side)
         test <- test[order(test$side,test$testing),]
-        annoY <- annoY[test$testing1,]
+        annoY <- annoY[test$testing1,,drop = F]
         data1 <- data1[,test$testing1]
       }
       else if ("specials" %in% colnames(annoX)) {
@@ -1419,7 +1418,7 @@ server <- function(session, input, output) {
         side <- annoX$side
         test <- data.frame(testing,testing1,side)
         test <- test[order(test$side,test$testing),]
-        annoX <- annoX[test$testing1,]
+        annoX <- annoX[test$testing1,,drop = F]
         data1 <- data1[test$testing1,]
       }
       else if ("daughter" %in% colnames(annoY)) {
@@ -1428,7 +1427,7 @@ server <- function(session, input, output) {
         side <- annoY$side
         test <- data.frame(testing,testing1,side)
         test <- test[order(test$side,test$testing),]
-        annoY <- annoY[test$testing1,]
+        annoY <- annoY[test$testing1,,drop = F]
         data1 <- data1[,test$testing1]
       }
       else if ("daughter" %in% colnames(annoX)) {
@@ -1437,7 +1436,7 @@ server <- function(session, input, output) {
         side <- annoX$side
         test <- data.frame(testing,testing1,side)
         test <- test[order(test$side,test$testing),]
-        annoX <- annoX[test$testing1,]
+        annoX <- annoX[test$testing1,,drop = F]
         data1 <- data1[test$testing1,]
       }
     }
@@ -1448,7 +1447,7 @@ server <- function(session, input, output) {
         testing1 <- c(1:length(annoY$parent))
         test <- data.frame(testing,testing1)
         test <- test[order(test$testing),]
-        annoY <- annoY[test$testing1,]
+        annoY <- annoY[test$testing1,,drop = F]
         data1 <- data1[,test$testing1]
       }
       else if ("parent" %in% colnames(annoX)) {
@@ -1456,7 +1455,7 @@ server <- function(session, input, output) {
         testing1 <- c(1:length(annoX$parent))
         test <- data.frame(testing,testing1)
         test <- test[order(test$testing),]
-        annoX <- annoX[test$testing1,]
+        annoX <- annoX[test$testing1,,drop = F]
         data1 <- data1[test$testing1,]
       }
       else if ("specials" %in% colnames(annoY)) {
@@ -1464,7 +1463,7 @@ server <- function(session, input, output) {
         testing1 <- c(1:length(annoY$specials))
         test <- data.frame(testing,testing1)
         test <- test[order(test$testing),]
-        annoY <- annoY[test$testing1,]
+        annoY <- annoY[test$testing1,,drop = F]
         data1 <- data1[,test$testing1]
       }
       else if ("specials" %in% colnames(annoX)) {
@@ -1472,7 +1471,7 @@ server <- function(session, input, output) {
         testing1 <- c(1:length(annoX$specials))
         test <- data.frame(testing,testing1)
         test <- test[order(test$testing),]
-        annoX <- annoX[test$testing1,]
+        annoX <- annoX[test$testing1,,drop = F]
         data1 <- data1[test$testing1,]
       }
       else if ("daughter" %in% colnames(annoY)) {
@@ -1480,7 +1479,7 @@ server <- function(session, input, output) {
         testing1 <- c(1:length(annoY$daughter))
         test <- data.frame(testing,testing1)
         test <- test[order(test$testing),]
-        annoY <- annoY[test$testing1,]
+        annoY <- annoY[test$testing1,,drop = F]
         data1 <- data1[,test$testing1]
       }
       else if ("daughter" %in% colnames(annoX)) {
@@ -1488,7 +1487,7 @@ server <- function(session, input, output) {
         testing1 <- c(1:length(annoX$daughter))
         test <- data.frame(testing,testing1)
         test <- test[order(test$testing),]
-        annoX <- annoX[test$testing1,]
+        annoX <- annoX[test$testing1,,drop = F]
         data1 <- data1[test$testing1,]
       }
     }
@@ -2350,7 +2349,7 @@ server <- function(session, input, output) {
     
     forData <- valueTable[,c("x","y","value")]
     attempt <- forData %>%
-      pivot_wider(names_from=c(y), values_from=value)
+      pivot_wider(names_from=c(y), values_from=value, names_repair = "minimal")
     attempt <- data.frame(attempt)
     rownames(attempt) <- attempt$x
     data <- attempt[,-1]
@@ -2372,7 +2371,6 @@ server <- function(session, input, output) {
     annoY <- data.frame(annoY)
     colnames(annoY) <- displayY
     rownames(annoY) <- uniqueY
-    annoY <<- annoY
     
     annoX <- c()
     for (i in uniqueX) {
@@ -2441,7 +2439,7 @@ server <- function(session, input, output) {
             remove <- c(remove, F)
           }
         }
-        data <- data[,remove == F, drop = F]
+        data <- data[,remove == F,, drop = F]
         annoY <- annoY[remove == F,,drop = F]
         
         testing <- rowSums(is.na(data))
@@ -2769,7 +2767,7 @@ server <- function(session, input, output) {
       yAnnoColors <- list()
     }
     
-    annoColors <<- append(xAnnoColors,yAnnoColors)
+    annoColors <- append(xAnnoColors,yAnnoColors)
     print(annoColors)
     
     print("start sorting")
@@ -2790,7 +2788,7 @@ server <- function(session, input, output) {
         side <- annoY$side
         test <- data.frame(testing,testing1,side)
         test <- test[order(test$side,test$testing),]
-        annoY <- annoY[test$testing1,]
+        annoY <- annoY[test$testing1,,drop = F]
         data1 <- data1[,test$testing1]
       }
       else if ("parent" %in% colnames(annoX)) {
@@ -2799,7 +2797,7 @@ server <- function(session, input, output) {
         side <- annoX$side
         test <- data.frame(testing,testing1,side)
         test <- test[order(test$side,test$testing),]
-        annoX <- annoX[test$testing1,]
+        annoX <- annoX[test$testing1,,drop = F]
         data1 <- data1[test$testing1,]
       }
       else if ("specials" %in% colnames(annoY)) {
@@ -2808,7 +2806,7 @@ server <- function(session, input, output) {
         side <- annoY$side
         test <- data.frame(testing,testing1,side)
         test <- test[order(test$side,test$testing),]
-        annoY <- annoY[test$testing1,]
+        annoY <- annoY[test$testing1,,drop = F]
         data1 <- data1[,test$testing1]
       }
       else if ("specials" %in% colnames(annoX)) {
@@ -2817,7 +2815,7 @@ server <- function(session, input, output) {
         side <- annoX$side
         test <- data.frame(testing,testing1,side)
         test <- test[order(test$side,test$testing),]
-        annoX <- annoX[test$testing1,]
+        annoX <- annoX[test$testing1,,drop = F]
         data1 <- data1[test$testing1,]
       }
       else if ("daughter" %in% colnames(annoY)) {
@@ -2826,7 +2824,7 @@ server <- function(session, input, output) {
         side <- annoY$side
         test <- data.frame(testing,testing1,side)
         test <- test[order(test$side,test$testing),]
-        annoY <- annoY[test$testing1,]
+        annoY <- annoY[test$testing1,,drop = F]
         data1 <- data1[,test$testing1]
       }
       else if ("daughter" %in% colnames(annoX)) {
@@ -2835,7 +2833,7 @@ server <- function(session, input, output) {
         side <- annoX$side
         test <- data.frame(testing,testing1,side)
         test <- test[order(test$side,test$testing),]
-        annoX <- annoX[test$testing1,]
+        annoX <- annoX[test$testing1,,drop = F]
         data1 <- data1[test$testing1,]
       }
     }
@@ -2846,7 +2844,7 @@ server <- function(session, input, output) {
         testing1 <- c(1:length(annoY$parent))
         test <- data.frame(testing,testing1)
         test <- test[order(test$testing),]
-        annoY <- annoY[test$testing1,]
+        annoY <- annoY[test$testing1,,drop = F]
         data1 <- data1[,test$testing1]
       }
       else if ("parent" %in% colnames(annoX)) {
@@ -2854,7 +2852,7 @@ server <- function(session, input, output) {
         testing1 <- c(1:length(annoX$parent))
         test <- data.frame(testing,testing1)
         test <- test[order(test$testing),]
-        annoX <- annoX[test$testing1,]
+        annoX <- annoX[test$testing1,,drop = F]
         data1 <- data1[test$testing1,]
       }
       else if ("specials" %in% colnames(annoY)) {
@@ -2862,7 +2860,7 @@ server <- function(session, input, output) {
         testing1 <- c(1:length(annoY$specials))
         test <- data.frame(testing,testing1)
         test <- test[order(test$testing),]
-        annoY <- annoY[test$testing1,]
+        annoY <- annoY[test$testing1,,drop = F]
         data1 <- data1[,test$testing1]
       }
       else if ("specials" %in% colnames(annoX)) {
@@ -2870,7 +2868,7 @@ server <- function(session, input, output) {
         testing1 <- c(1:length(annoX$specials))
         test <- data.frame(testing,testing1)
         test <- test[order(test$testing),]
-        annoX <- annoX[test$testing1,]
+        annoX <- annoX[test$testing1,,drop = F]
         data1 <- data1[test$testing1,]
       }
       else if ("daughter" %in% colnames(annoY)) {
@@ -2878,7 +2876,7 @@ server <- function(session, input, output) {
         testing1 <- c(1:length(annoY$daughter))
         test <- data.frame(testing,testing1)
         test <- test[order(test$testing),]
-        annoY <- annoY[test$testing1,]
+        annoY <- annoY[test$testing1,,drop = F]
         data1 <- data1[,test$testing1]
       }
       else if ("daughter" %in% colnames(annoX)) {
@@ -2886,7 +2884,7 @@ server <- function(session, input, output) {
         testing1 <- c(1:length(annoX$daughter))
         test <- data.frame(testing,testing1)
         test <- test[order(test$testing),]
-        annoX <- annoX[test$testing1,]
+        annoX <- annoX[test$testing1,,drop = F]
         data1 <- data1[test$testing1,]
       }
     }
@@ -2896,7 +2894,6 @@ server <- function(session, input, output) {
     print(xNames)
     print(colnames(annoX))
     
-    #sort annox and y 
     
     #sort annoX and annoY based on the organization of the data
     keyAnnoX <- data.frame(DataRows = (rownames(data1)),sortid = c(1:length(rownames(data1))))
@@ -2934,7 +2931,6 @@ server <- function(session, input, output) {
     } else {
       colName <- unlist(rownames(annoY))
     }
-    
     
     print("heatmap colors")
     breaks <- breaks
@@ -2979,7 +2975,7 @@ server <- function(session, input, output) {
       })
     }
     
-    heatmapColorsForZach <<- heatmapColors
+    heatmapColorsForZach <- heatmapColors
     #update colors download
     output$colors_2 <- downloadHandler(
       filename = function() {
