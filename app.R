@@ -536,7 +536,7 @@ server <- function(session, input, output) {
     }
     global$fullData <- fullData
     
-    #Fix ECT
+    #Fix ECT for older datasets
     theCol <- grepl("name",colnames(fullData),ignore.case = T) & grepl("region",colnames(fullData),ignore.case = T)
     theCol <- which(theCol)
     theRows <- grep("ectorh",fullData[,theCol],ignore.case = T)
@@ -572,14 +572,17 @@ server <- function(session, input, output) {
     updateSelectizeInput(session,"annoVariable","Select your variable to display on anatomical heatmap", choices = options1,options = list(create = F))
     
     options2 <- colnames(global$fullData)
-    options2 <- options2[!grepl("load",options2,ignore.case = T)]
+    if (any(grepl("load",options2,ignore.case = T))){
+      options2 <- options2[!grepl("load",options2,ignore.case = T)]
+      options2 <- c("SpecialsLoad","ParentLoad","DaughterLoad",options2)
+    }
     
     if (any(grepl("inclusion",options2,ignore.case = T))){
       options2 <- c("ParentNeuriteLoad","DaughterNeuriteLoad",options2)
     }
     
     #choose variables to sum with
-    updateSelectizeInput(session,"sumWith","Select the nutil variable to create value with",choices=c("ParentLoad","DaughterLoad","ParentInclPerMM2","DaughterInclPerMM2",options2),options = list(create = FALSE))
+    updateSelectizeInput(session,"sumWith","Select the nutil variable to create value with",choices=c("ParentInclPerMM2","DaughterInclPerMM2",options2),options = list(create = FALSE))
     
     combinedvars <- c(x,y)
     #choose variables to group by
@@ -634,31 +637,45 @@ server <- function(session, input, output) {
       variableCheckPoint$level <- variableCheckPoint$daughter
       fullData$level <- fullData$daughter
       global$fullData <- fullData
+    } else if (grepl("Specials",nutilVariable)){
+      variableCheckPoint$level <- variableCheckPoint$specials
+      fullData$level <- fullData$specials
+      global$fullData <- fullData
     }
     
     print("level designated")
     
+    #check vars
+    # variableCheckPoint <<- variableCheckPoint
+    # fullData <<- fullData  
+    # view(fullData)
+    
+    fullData$uniqueIDCol <- paste0(fullData$mouse,fullData$side,fullData$level)
+    variableCheckPoint$uniqueIDCol <- paste0(variableCheckPoint$mouse,variableCheckPoint$side,variableCheckPoint$level)
+    
     if (grepl("Load",nutilVariable) & !grepl("Neurite",nutilVariable)) {
       print("Normal Load")
-      test <- variableCheckPoint %>% group_by(mouse,side,level) %>% 
+      test <- variableCheckPoint %>% group_by(uniqueIDCol) %>% 
         summarise(`Object area` = mean(`Object area`), `Region area` = mean(`Region area`))
       
       test$baseLoad <- test$`Object area`/test$`Region area`
       #remove object.area and region.area cols
       test <- test[,!colnames(test) %in% c("Object area","Region area")]
       
-      #merge test with chekckpoint2 by mouse, side, and level
-      variableCheckPoint <- merge(variableCheckPoint, test, by = c("mouse", "side", "level"))
+      #merge test with checkpoint by mouse, side, and level
+      variableCheckPoint <- left_join(variableCheckPoint, test, by = "uniqueIDCol")
       variableCheckPoint$nutilVariable <- variableCheckPoint$baseLoad
-      variableCheckPoint <- variableCheckPoint
-      fullData <- merge(fullData,variableCheckPoint[,c("mouse","side","level","nutilVariable")], by = c("mouse", "side", "level"))
+      subsetVar <- variableCheckPoint[,c("uniqueIDCol","nutilVariable")]
+      subsetVar <- subsetVar[order(subsetVar$uniqueIDCol), ]
+      fullData <- fullData[order(fullData$uniqueIDCol), ]
+      fullData <- cbind(fullData, nutilVariable = subsetVar$nutilVariable)
       global$fullData <- fullData
       print("NormalLoad Done")
       
     } else if (grepl("Neurite",nutilVariable)) {
       print("NeuriteLoad")
       variableCheckPoint$`Inclusion area` <- variableCheckPoint[,grepl("inclusion",colnames(variableCheckPoint),ignore.case = T)]
-      test <- variableCheckPoint %>% group_by(mouse,side,level) %>% 
+      test <- variableCheckPoint %>% group_by(uniqueIDCol) %>% 
         summarise(`Object area` = mean(`Object area`), `Inclusion area` = mean(`Inclusion area`),
                   `Region area` = mean(`Region area`))
       test$ParentNeurite <- test$`Object area` - test$`Inclusion area`
@@ -668,27 +685,33 @@ server <- function(session, input, output) {
       test <- test[,!colnames(test) %in% c("Object area","Region area",
                                            "Inclusion area")]
       
-      #merge test with chekckpoint2 by mouse, side, and level
-      variableCheckPoint <- merge(variableCheckPoint, test, by = c("mouse", "side", "level"))
-      variableCheckPoint$nutilVariable <- variableCheckPoint$NeuriteLoad
-      fullData <- merge(fullData,variableCheckPoint[,c("mouse","side","level","nutilVariable")], by = c("mouse", "side", "level"))
+      #merge test with checkpoint by mouse, side, and level
+      variableCheckPoint <- left_join(variableCheckPoint, test, by = "uniqueIDCol")
+      variableCheckPoint$nutilVariable <- variableCheckPoint$baseLoad
+      subsetVar <- variableCheckPoint[,c("uniqueIDCol","nutilVariable")]
+      subsetVar <- subsetVar[order(subsetVar$uniqueIDCol), ]
+      fullData <- fullData[order(fullData$uniqueIDCol), ]
+      fullData <- cbind(fullData, nutilVariable = subsetVar$nutilVariable)
       global$fullData <- fullData
       print("NeuriteLoad Done")
       
     } else if (grepl("InclPerMM2",nutilVariable)) {
-      ("InclPerMM2")
+      print("InclPerMM2")
       variableCheckPoint$`Region area` <- variableCheckPoint$`Region area` * .000001
-      test <- variableCheckPoint %>% group_by(mouse,side,level) %>% 
+      test <- variableCheckPoint %>% group_by(uniqueIDCol) %>% 
         summarise(`Object count` = mean(`Object count`), `Region area` = mean(`Region area`))
       
       test$InclPerMM2 <- test$`Object count`/test$`Region area`
       #remove object.area and region.area cols
       test <- test[,!colnames(test) %in% c("Object count","Region area")]
       
-      #merge test with chekckpoint2 by mouse, side, and level
-      variableCheckPoint <- merge(variableCheckPoint, test, by = c("mouse", "side", "level"))
-      variableCheckPoint$nutilVariable <- variableCheckPoint$InclPerMM2
-      fullData <- merge(fullData,variableCheckPoint[,c("mouse","side","level","nutilVariable")], by = c("mouse", "side", "level"))
+      #merge test with checkpoint by mouse, side, and level
+      variableCheckPoint <- left_join(variableCheckPoint, test, by = "uniqueIDCol")
+      variableCheckPoint$nutilVariable <- variableCheckPoint$baseLoad
+      subsetVar <- variableCheckPoint[,c("uniqueIDCol","nutilVariable")]
+      subsetVar <- subsetVar[order(subsetVar$uniqueIDCol), ]
+      fullData <- fullData[order(fullData$uniqueIDCol), ]
+      fullData <- cbind(fullData, nutilVariable = subsetVar$nutilVariable)
       global$fullData <- fullData
       print("InclPerMM2 Done")
       
@@ -812,60 +835,6 @@ server <- function(session, input, output) {
       newTable <- table
       newTable <- newTable[,! colnames(newTable) %in% c("nutilVariable")]
     }
-    # else if (input$toGroup == T){
-    #   print("to Group")
-    #   colnames(fullData) <- gsub("\\."," ",colnames(fullData))
-    #   nutilVariable <<- gsub("\\."," ",nutilVariable)
-    #   ZBasics <<- gsub("\\."," ",ZBasics)
-    #   
-    #   print("1")
-    #   #aggregate by x and y first
-    #   theTablePt1 <- aggregate(fullData[,c(displayX,displayY,groupBy,ZBasics)], by = fullData[,c("x","y")], FUN=unique)
-    #   theTablePt2 <- aggregate(fullData[,c(nutilVariable)], by = fullData[,c("x","y")], FUN=as.vector)
-    #   colnames(theTablePt2)[3] <- nutilVariable
-    #   theTable <<- cbind(theTablePt1,theTablePt2)
-    #   
-    #   theTable$nutilVariable <- theTable[,nutilVariable]
-    #   theTable <- theTable[, !duplicated(colnames(theTable))]
-    #   theTable <- theTable %>% select(-contains('.1'))
-    #   theTable <- theTable %>% select(-contains('.2'))
-    #   
-    #   print("2")
-    #   #sum each row
-    #   theTable1 <<- theTable %>% rowwise() %>% 
-    #     mutate(Sum = sum(as.numeric(nutilVariable),na.rm = T))
-    #   
-    #   print("3")
-    #   #add up sums to get totals
-    #   # totalsTable <- aggregate(theTable1[,c(groupBy,"Sum")], by = theTable1[,c(groupBy)], FUN=unique)
-    #   totalsTablePt1 <- aggregate(theTable1[,c(groupBy)], by = theTable1[,c(groupBy)], FUN=unique)
-    #   totalsTablePt2 <- aggregate(theTable1[,c("Sum")], by = theTable1[,c(groupBy)], FUN=as.vector)
-    #   
-    #   totalsTable <<- cbind(totalsTablePt1,totalsTablePt2)
-    #   
-    #   totalsTable <- totalsTable[, !duplicated(colnames(totalsTable))]
-    #   totalsTable <- totalsTable %>% rowwise() %>% 
-    #     mutate(totalSum = sum(as.numeric(Sum),na.rm = T))
-    #   totalsTable1 <<- totalsTable[,!colnames(totalsTable) %in% c("Sum")]
-    #   print("4")
-    #   #combine tables
-    #   
-    #   newTable <<- theTable1 %>% left_join(totalsTable1,by=groupBy)
-    #   newTable <- newTable[, !duplicated(colnames(newTable))]
-    #   print("5")
-    #   #do math to get percents
-    #   
-    #   newTable$value <- newTable$Sum/newTable$totalSum*100
-    #   newTable$ZachValue <- newTable$value
-    #   print("6")
-    #   if (input$log == T) {
-    #     newTable$value <- newTable$value + 0.00001
-    #     newTable$value <- log10(newTable$value)
-    #     # table[is.na(table$value),17] <- 0
-    #   }
-    #   newTable$displayValue <- newTable$value
-    #   
-    # }
     else {
       table <- aggregate(fullData[,c(displayX,displayY,"nutilVariable",ZBasics)], by = fullData[,c("x","y")], FUN=unique)
       
